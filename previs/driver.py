@@ -20,7 +20,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from previs.compiler import compile_camera_path, compile_shot  # noqa: E402
+from previs.compiler import compile_bundle, compile_camera_path, compile_shot  # noqa: E402
 from previs.schema import load_shot  # noqa: E402
 
 
@@ -40,6 +40,18 @@ def parse_args(argv):
         help="render the camera's trajectory as a visible trail from an external "
         "static camera, instead of the shot's own animated camera",
     )
+    parser.add_argument(
+        "--bundle", action="store_true",
+        help="export a full control-layer bundle (reference, depth, camera_motion, "
+        "pose, metadata, prompts) to the --out directory",
+    )
+    parser.add_argument(
+        "--generators", default=None,
+        help="comma-separated target generators for prompts (bundle mode)",
+    )
+    parser.add_argument("--no-depth", action="store_true", help="skip the depth pass (bundle mode)")
+    parser.add_argument("--no-pose", action="store_true", help="skip pose capture (bundle mode)")
+    parser.add_argument("--no-stills", action="store_true", help="skip stills (bundle mode)")
     return parser.parse_args(args)
 
 
@@ -47,6 +59,17 @@ def main():
     args = parse_args(sys.argv)
     try:
         shot = load_shot(args.shot)
+        if args.bundle:
+            generators = (
+                tuple(g.strip() for g in args.generators.split(",") if g.strip())
+                if args.generators else None
+            )
+            compile_bundle(
+                shot, args.out, assets_root=args.assets, verbose=not args.quiet,
+                generators=generators, with_depth=not args.no_depth,
+                with_pose=not args.no_pose, with_stills=not args.no_stills,
+            )
+            return
         if args.camera_path:
             compile_camera_path(
                 shot, args.out, assets_root=args.assets, verbose=not args.quiet,

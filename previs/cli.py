@@ -104,6 +104,62 @@ def camera_path(args):
     return 0
 
 
+def bundle(args):
+    """Export a full control-layer bundle for a downstream AI video generator:
+    the reference render, a depth pass, exact camera_motion + pose landmarks,
+    machine-readable metadata, and per-generator prompts — the producer side
+    of a Blockout-style shot package, with camera and pose as ground truth
+    rather than solved from footage."""
+    blender = find_blender(args.blender)
+    shot_path = Path(args.shot).resolve()
+    if not shot_path.is_file():
+        print(f"error: no such shot file: {shot_path}", file=sys.stderr)
+        return 2
+
+    with shot_path.open(encoding="utf-8") as handle:
+        shot = json.load(handle)
+    if shot.get("status") == "needs_blocking" and not args.allow_unblocked:
+        print(
+            f"error: {shot_path.name} is still status 'needs_blocking'.\n"
+            "       Author its blocking first, or pass --allow-unblocked.",
+            file=sys.stderr,
+        )
+        return 2
+
+    shot_id = shot.get("shot_id", shot_path.stem)
+    out_dir = (Path(args.out) if args.out else DEFAULT_RENDER_DIR / "bundles" / shot_id).resolve()
+    out_dir.mkdir(parents=True, exist_ok=True)
+
+    command = [
+        str(blender), "--background", "--factory-startup", "--python", str(DRIVER),
+        "--", str(shot_path), "--out", str(out_dir), "--bundle",
+    ]
+    if args.assets:
+        command += ["--assets", str(Path(args.assets).resolve())]
+    if args.generators:
+        command += ["--generators", args.generators]
+    if args.no_depth:
+        command.append("--no-depth")
+    if args.no_pose:
+        command.append("--no-pose")
+    if args.no_stills:
+        command.append("--no-stills")
+
+    print(f"[previs] blender     {blender}")
+    result = subprocess.run(command)
+    if result.returncode != 0:
+        print(f"error: Blender exited with code {result.returncode}", file=sys.stderr)
+        return result.returncode
+
+    manifest_path = out_dir / "bundle_manifest.json"
+    if not manifest_path.is_file():
+        print(f"error: bundle manifest not written: {manifest_path}", file=sys.stderr)
+        return 1
+    print(f"[previs] bundle: {out_dir}")
+    return 0
+
+
+
 def render(args):
     blender = find_blender(args.blender)
     shot_path = Path(args.shot).resolve()
@@ -714,6 +770,27 @@ def main(argv=None):
     camera_path_parser.add_argument("--assets", default=None)
     camera_path_parser.add_argument("--blender", default=None)
     camera_path_parser.set_defaults(func=camera_path)
+
+    bundle_parser = subparsers.add_parser(
+        "bundle", help="export a full control-layer bundle for an AI video generator"
+    )
+    bundle_parser.add_argument("shot")
+    bundle_parser.add_argument("--out", default=None, help="output bundle directory")
+    bundle_parser.add_argument("--assets", default=None)
+    bundle_parser.add_argument("--blender", default=None)
+    bundle_parser.add_argument(
+        "--generators", default=None,
+        help="comma-separated target generators (default: generic,seedance,minimax)",
+    )
+    bundle_parser.add_argument("--no-depth", action="store_true", help="skip the depth pass")
+    bundle_parser.add_argument("--no-pose", action="store_true", help="skip pose landmark capture")
+    bundle_parser.add_argument("--no-stills", action="store_true", help="skip mark stills")
+    bundle_parser.add_argument(
+        "--allow-unblocked", action="store_true",
+        help="bundle a needs_blocking stub with placeholder camera/blocking",
+    )
+    bundle_parser.set_defaults(func=bundle)
+
 
     import_parser = subparsers.add_parser(
         "import", help="import shot stubs from a story-pipeline file"

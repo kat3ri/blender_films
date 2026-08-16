@@ -875,6 +875,170 @@ def render_preview_frame(scene, output_path, frame=1):
     return output_path
 
 
+# ---------------------------------------------------------------------------
+# control-layer passes (depth, pose, stills) for a bundle export
+# ---------------------------------------------------------------------------
+
+
+def render_depth_pass(scene, output_path, near_m=0.5, far_m=30.0):
+    """Render a depth-pass video for depth-conditioned (ControlNet) workflows.
+
+    Depth is mapped with a *fixed* near/far range, not a per-frame normalize,
+    so the value of a given surface does not flicker frame to frame — the same
+    stability Blockout's depth pass has. Near reads bright, far reads dark.
+
+    Workbench has no usable Z pass, so this renders through EEVEE for the depth
+    pass only; the reference video keeps whatever engine the shot asked for.
+    Engine and compositor state are saved and restored.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    view_layer = bpy.context.view_layer
+    saved = {
+        "engine": scene.render.engine,
+        "use_nodes": scene.use_nodes,
+        "use_pass_z": view_layer.use_pass_z,
+        "filepath": scene.render.filepath,
+        "file_format": scene.render.image_settings.file_format,
+    }
+
+    try:
+        scene.render.engine = "BLENDER_EEVEE_NEXT"
+        view_layer.use_pass_z = True
+        scene.use_nodes = True
+
+        tree = scene.node_tree
+        tree.nodes.clear()
+        render_layers = tree.nodes.new("CompositorNodeRLayers")
+        map_range = tree.nodes.new("CompositorNodeMapRange")
+        # Near -> 1.0 (white), far -> 0.0 (black); clamp so out-of-range stays flat.
+        map_range.inputs["From Min"].default_value = float(near_m)
+        map_range.inputs["From Max"].default_value = float(far_m)
+        map_range.inputs["To Min"].default_value = 1.0
+        map_range.inputs["To Max"].default_value = 0.0
+        if hasattr(map_range, "use_clamp"):
+            map_range.use_clamp = True
+        composite = tree.nodes.new("CompositorNodeComposite")
+        tree.links.new(render_layers.outputs["Depth"], map_range.inputs["Value"])
+        tree.links.new(map_range.outputs["Value"], composite.inputs["Image"])
+
+        stem = output_path.parent / f"_{output_path.stem}_depth"
+        scene.render.image_settings.file_format = "FFMPEG"
+        scene.render.filepath = str(stem)
+        scene.render.use_file_extension = True
+        bpy.ops.render.render(animation=True)
+
+        produced = sorted(
+            output_path.parent.glob(f"_{output_path.stem}_depth*"),
+            key=lambda p: p.stat().st_mtime,
+        )
+        if not produced:
+            raise RuntimeError(f"Blender produced no depth output for {output_path}")
+        if output_path.exists():
+            output_path.unlink()
+        produced[-1].replace(output_path)
+        for leftover in produced[:-1]:
+            leftover.unlink()
+    finally:
+        scene.render.engine = saved["engine"]
+        view_layer.use_pass_z = saved["use_pass_z"]
+        scene.use_nodes = saved["use_nodes"]
+        scene.render.filepath = saved["filepath"]
+        scene.render.image_settings.file_format = saved["file_format"]
+
+    return output_path
+
+
+# The subset of rig joints worth exporting as pose landmarks, in a stable
+# order. A downstream consumer wants a skeleton, not every empty.
+POSE_LANDMARK_JOINTS = (
+    "head", "neck", "chest", "spine", "hips",
+    "l_shoulder", "l_elbow", "l_hand",
+    "r_shoulder", "r_elbow", "r_hand",
+    "l_hip", "l_knee", "l_foot",
+    "r_hip", "r_knee", "r_foot",
+)
+
+
+def capture_pose_landmarks(scene, camera, characters, fps, frame_end, resolution):
+    """Per-frame 3D and 2D joint positions for every articulated character.
+
+    This is the exact analogue of an OpenPose / MediaPipe extraction, except
+    ground-truth: the joints are the actual animated skeleton, and the 2D
+    projection is the real camera's, so there is no detection error, no missed
+    frame, and no left/right swap. ``characters`` maps id -> joints dict from
+    :func:`build_rigged_proxy`.
+    """
+    from bpy_extras.object_utils import world_to_camera_view
+
+    res_x, res_y = int(resolution[0]), int(resolution[1])
+    people = []
+    for char_id, joints in characters.items():
+        frames = []
+        for frame in range(1, frame_end + 1):
+            scene.frame_set(frame)
+            bpy.context.view_layer.update()
+            joints_out = {}
+            for name in POSE_LANDMARK_JOINTS:
+                empty = joints.get(name)
+                if empty is None:
+                    continue
+                world = empty.matrix_world.translation
+                ndc = world_to_camera_view(scene, camera, world)
+                joints_out[name] = {
+                    "world": [round(world.x, 5), round(world.y, 5), round(world.z, 5)],
+                    # Pixel coords: origin top-left, +y down (image convention).
+                    "image": [round(ndc.x * res_x, 2), round((1.0 - ndc.y) * res_y, 2)],
+                    # In front of camera and inside the frame?
+                    "visible": bool(ndc.z > 0.0 and 0.0 <= ndc.x <= 1.0 and 0.0 <= ndc.y <= 1.0),
+                    "depth_m": round(ndc.z, 4),
+                }
+            frames.append({"frame": frame, "t": round((frame - 1) / fps, 5), "joints": joints_out})
+        people.append({"id": char_id, "frames": frames})
+
+    return {
+        "format": "previs.pose_landmarks",
+        "version": "1.0",
+        "fps": int(fps),
+        "frame_count": frame_end,
+        "resolution": [res_x, res_y],
+        "joint_names": list(POSE_LANDMARK_JOINTS),
+        "coordinate_notes": (
+            "world is Blender Z-up metres; image is pixels with origin at the "
+            "top-left and +y downward; depth_m is metres in front of the camera."
+        ),
+        "people": people,
+    }
+
+
+def render_stills(scene, out_dir, frames, prefix="frame"):
+    """Render a handful of specific frames to PNG stills in ``out_dir``.
+
+    Cheap review chrome: a frame at each camera mark plus first and last, the
+    way Blockout drops a still at every mark.
+    """
+    out_dir = Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    saved_format = scene.render.image_settings.file_format
+    saved_filepath = scene.render.filepath
+    written = []
+    try:
+        scene.render.image_settings.file_format = "PNG"
+        for frame in frames:
+            scene.frame_set(int(frame))
+            target = out_dir / f"{prefix}_{int(frame):04d}"
+            scene.render.filepath = str(target)
+            bpy.ops.render.render(write_still=True)
+            produced = target.with_suffix(".png")
+            if produced.is_file():
+                written.append(produced)
+    finally:
+        scene.render.image_settings.file_format = saved_format
+        scene.render.filepath = saved_filepath
+    return written
+
+
 def scene_manifest(scene):
     """A cheap, fast textual summary of every object actually in the scene.
 
