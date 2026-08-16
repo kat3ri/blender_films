@@ -124,9 +124,37 @@ that location automatically and are valid `interact` targets, so no shot in a
 chain can end up missing a piece of its own set. `props` is for objects specific
 to one shot.
 
-`shape` is an open enum, so a future step that sources real geometry (search a
-free-asset library, import, clay-shade it) drops in as `{"shape": "mesh", "file":
-...}` without touching the shot schema, compiler or filmmaking API.
+`shape` is an open enum. `"mesh"` is real: a part can reference a downloaded
+asset file instead of procedural geometry --
+
+```bash
+python -m previs.cli asset-search-polyhaven "bar stool"
+python -m previs.cli asset-fetch-polyhaven bar_chair_round_01 --kind props --as bar_stool_real
+```
+
+[Poly Haven](https://polyhaven.com)'s API is open (no auth, just a
+`User-Agent` header) and every asset is CC0 -- free for any use, no
+attribution. `asset-search-polyhaven` ranks candidates by tag/name match for
+you to review and pick, same principle as `mocap search`: asset choice is a
+directorial judgement call, never auto-selected. `asset-fetch-polyhaven`
+downloads the glTF (cached under `PREVIS_ASSET_CACHE`, default
+`~/previs_asset_cache/polyhaven/` -- outside the repo, same reasoning as the
+planned mocap cache) and writes a ready-to-use asset JSON.
+
+A mesh part's materials are always flattened to a solid colour (sampled from
+the source texture, or an explicit `"color"` override) before rendering --
+Workbench's `MATERIAL` shading reads only `material.diffuse_color` and never
+samples an image texture, so an imported asset's real PBR textures render as
+flat mid-grey otherwise. Confirmed by an actual render before this was built,
+not assumed. See `blender_api.py`'s module docstring for this and every other
+hard-won Blender API gotcha hit building this system.
+
+A part (or set fixture) can also carry `"repeat": {"axis": "x", "count": N,
+"spacing": m}` to become N evenly spaced copies, and its own `"color"`
+distinct from the asset default. Both exist because hand-placing every
+repeated element (stones, bottles, bricks) makes authors under-count real
+density, and a video model conditioned on a too-sparse control clip tends to
+take the count literally and hallucinate trying to reconcile it.
 
 ## Articulated characters
 
@@ -204,9 +232,12 @@ opens a window.
 ## Commands
 
 ```bash
-python -m previs.cli render <shot.json> [--out path] [--allow-unblocked]
+python -m previs.cli render <shot.json> [--out path] [--allow-unblocked] [--preview [FRAME]]
 python -m previs.cli import <project> <name>    # project from projects.json
 python -m previs.cli survey <set_id> [--mode push|pan|orbit] [--figure-at X Y]
+python -m previs.cli asset-search-polyhaven "<query>" [--kind models|hdris|textures]
+python -m previs.cli asset-fetch-polyhaven <id> --kind <props|sets|characters> --as <name>
+python -m previs.cli camera-path <shot.json> [--mode top|angle]
 python -m previs.cli continuity <check|apply> [paths...]
 python -m previs.cli validate [paths...]        # defaults to every shot in shots/
 python -m previs.cli info
@@ -214,6 +245,27 @@ python -m previs.cli info
 
 `render` refuses a `needs_blocking` stub unless you pass `--allow-unblocked`,
 which previews it with a default wide static camera.
+
+`--preview` renders one still frame (default: frame 1) to a PNG plus a scene
+manifest (every mesh actually built, with world-space position, dimensions,
+face count) instead of the full animated video -- a cheap sanity check before
+paying for a full render. Same engine, same resolution, same materials as the
+real render; only the frame count differs. Worth knowing: Blender's own
+process-startup cost (~20s) dominates total time for a typical short shot, so
+`--preview` isn't dramatically faster than a full render at that scale -- its
+real value is the manifest and an instantly-viewable PNG, not raw speed.
+
+`camera-path` renders the shot's *actual computed* camera trajectory as a
+visible trail (green start, red end) viewed from a static camera placed
+outside the shot, in either a top-down plan view or a 3/4 elevated view. The
+shot's own camera can never show where it itself is -- this exists because a
+shot can look wrong for reasons a rendered frame alone won't reveal: a dolly
+that stops short of its subject instead of arriving, an orbit whose radius
+sends it past a wall, a track that runs backward. Caught exactly the first of
+those on `cam_test_aerial_establish.json` the first time this was used for
+real -- the descent's end position was ~14m out from the keep instead of
+converging on it, which only became obvious once the path was actually drawn
+rather than inferred from the rendered frames.
 
 Watch the compiler's `WARNING` lines — they flag placeholder assets and cameras
 that have left the stage (which renders as the back of a wall).

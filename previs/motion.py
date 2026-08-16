@@ -312,22 +312,38 @@ class CameraKey:
         self.rotation_euler = rotation_euler
 
 
-def _aim_point(shot, move, tracks, library, t, fallback):
+def _aim_point(shot, move, tracks, library, t, fallback, camera_position=None):
     """Where the camera should look during ``move`` at time ``t``.
 
     ``aim_offset_z`` nudges the aim up or down from the target's default head
     height — needed whenever the subject is not standing, since a crouched or
     seated figure sits well below the height the asset declares.
+
+    ``aim_offset_right_m`` shifts the aim point sideways in the camera's own
+    right vector (computed from ``camera_position`` toward the un-offset aim
+    point), which pushes the subject *away* from centre in the rendered frame
+    — a positive value moves the subject toward frame-left. Every move type in
+    this system otherwise centres its target dead-on; this is the one knob for
+    an off-centre, rule-of-thirds-style composition, which matters whenever a
+    reference image places the subject somewhere other than centre.
     """
-    offset = float(move.get("aim_offset_z", 0.0))
+    offset_z = float(move.get("aim_offset_z", 0.0))
+    offset_right = float(move.get("aim_offset_right_m", 0.0))
     if "target_position" in move:
         point = pad3(move["target_position"], 1.2)
     elif move.get("target_id"):
         point = _object_aim(shot, move["target_id"], tracks, library, t)
     else:
         point = list(fallback)
-    if offset:
-        point = [point[0], point[1], point[2] + offset]
+    if offset_right and camera_position is not None:
+        dx = point[0] - camera_position[0]
+        dy = point[1] - camera_position[1]
+        horiz = math.hypot(dx, dy)
+        if horiz > EPS:
+            right_x, right_y = dy / horiz, -dx / horiz
+            point = [point[0] + right_x * offset_right, point[1] + right_y * offset_right, point[2]]
+    if offset_z:
+        point = [point[0], point[1], point[2] + offset_z]
     return point
 
 
@@ -368,13 +384,13 @@ def _eval_move(shot, move, tracks, library, t, stage_centre):
 
     if move_type == "static":
         position = pad3(move["position"], 1.6)
-        return position, _aim_point(shot, move, tracks, library, t, stage_centre)
+        return position, _aim_point(shot, move, tracks, library, t, stage_centre, position)
 
     if move_type == "dolly":
         start = pad3(move["position"], 1.6)
         end = pad3(move["end_position"], start[2])
         position = [lerp(start[i], end[i], u) for i in range(3)]
-        return position, _aim_point(shot, move, tracks, library, t, stage_centre)
+        return position, _aim_point(shot, move, tracks, library, t, stage_centre, position)
 
     if move_type == "track":
         start = pad3(move["position"], 1.6)
@@ -388,7 +404,7 @@ def _eval_move(shot, move, tracks, library, t, stage_centre):
             position = [
                 current[i] + lerp(offset[i], end_offset[i], u) for i in range(3)
             ]
-        return position, _aim_point(shot, move, tracks, library, t, stage_centre)
+        return position, _aim_point(shot, move, tracks, library, t, stage_centre, position)
 
     if move_type == "orbit":
         if "center_id" in move:
@@ -398,14 +414,20 @@ def _eval_move(shot, move, tracks, library, t, stage_centre):
             centre = pad3(move["center_position"])
             aim = [centre[0], centre[1], centre[2] + 1.2]
         angle = math.radians(lerp(float(move["start_deg"]), float(move["end_deg"]), u))
-        radius = float(move["radius_m"])
-        height = float(move.get("height_m", 1.6))
+        # radius_m/height_m may each be a single number (constant, as before)
+        # or [start, end] to spiral in/out or rise/descend while turning --
+        # "spin and pull back" instead of a flat circle, without a second move.
+        radius = float(lerp(*move["radius_m"], u)) if isinstance(move["radius_m"], list) \
+            else float(move["radius_m"])
+        height_spec = move.get("height_m", 1.6)
+        height = float(lerp(*height_spec, u)) if isinstance(height_spec, list) \
+            else float(height_spec)
         position = [
             centre[0] + radius * math.cos(angle),
             centre[1] + radius * math.sin(angle),
             centre[2] + height,
         ]
-        return position, _aim_point(shot, move, tracks, library, t, aim)
+        return position, _aim_point(shot, move, tracks, library, t, aim, position)
 
     if move_type in ("pan", "tilt"):
         position = pad3(move["position"], 1.6)

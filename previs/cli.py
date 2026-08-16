@@ -62,6 +62,40 @@ def find_blender(explicit=None):
     )
 
 
+def camera_path(args):
+    """Render the shot's actual computed camera trajectory as a visible
+    trail, viewed from a static camera placed outside the shot -- the only
+    way to see a camera path rather than infer it from what that camera
+    itself renders."""
+    blender = find_blender(args.blender)
+    shot_path = Path(args.shot).resolve()
+    if not shot_path.is_file():
+        print(f"error: no such shot file: {shot_path}", file=sys.stderr)
+        return 2
+
+    default_name = f"{shot_path.stem}_campath_{args.mode}.png"
+    output = (Path(args.out) if args.out else DEFAULT_RENDER_DIR / default_name).resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    command = [
+        str(blender), "--background", "--factory-startup", "--python", str(DRIVER),
+        "--", str(shot_path), "--out", str(output), "--camera-path", args.mode,
+    ]
+    if args.assets:
+        command += ["--assets", str(Path(args.assets).resolve())]
+
+    print(f"[previs] blender     {blender}")
+    result = subprocess.run(command)
+    if result.returncode != 0:
+        print(f"error: Blender exited with code {result.returncode}", file=sys.stderr)
+        return result.returncode
+    if not output.is_file():
+        print(f"error: expected output not written: {output}", file=sys.stderr)
+        return 1
+    print(f"[previs] camera path view: {output}  ({output.stat().st_size / 1024:.0f} KB)")
+    return 0
+
+
 def render(args):
     blender = find_blender(args.blender)
     shot_path = Path(args.shot).resolve()
@@ -81,7 +115,9 @@ def render(args):
         )
         return 2
 
-    output = Path(args.out) if args.out else DEFAULT_RENDER_DIR / f"{shot.get('shot_id', shot_path.stem)}.mp4"
+    default_name = f"{shot.get('shot_id', shot_path.stem)}"
+    default_name += "_preview.png" if args.preview else ".mp4"
+    output = Path(args.out) if args.out else DEFAULT_RENDER_DIR / default_name
     output = output.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
 
@@ -98,6 +134,8 @@ def render(args):
     ]
     if args.assets:
         command += ["--assets", str(Path(args.assets).resolve())]
+    if args.preview is not None:
+        command += ["--preview-frame", str(args.preview)]
 
     print(f"[previs] blender     {blender}")
     result = subprocess.run(command)
@@ -109,7 +147,8 @@ def render(args):
         return 1
 
     size_kb = output.stat().st_size / 1024.0
-    print(f"[previs] control video: {output}  ({size_kb:.0f} KB)")
+    label = "preview frame" if args.preview is not None else "control video"
+    print(f"[previs] {label}: {output}  ({size_kb:.0f} KB)")
     return 0
 
 
@@ -292,7 +331,7 @@ def survey(args):
     try:
         render_args = argparse.Namespace(
             shot=temp_path, out=str(output), assets=args.assets,
-            blender=args.blender, allow_unblocked=True,
+            blender=args.blender, allow_unblocked=True, preview=None,
         )
         how = {"orbit": f"orbit r={radius:.1f}m", "pan": f"pan from {stand}"}.get(
             args.mode, f"push down the room from y={-(span_y - 0.4):.1f}")
@@ -301,6 +340,74 @@ def survey(args):
         return render(render_args)
     finally:
         Path(temp_path).unlink(missing_ok=True)
+
+
+def asset_search(args):
+    """List ranked Poly Haven candidates for a query. Never auto-picks one --
+    same principle as `mocap search`: asset choice is a judgment call."""
+    from previs import polyhaven
+
+    try:
+        results = polyhaven.search(args.query, kind=args.kind, limit=args.limit)
+    except RuntimeError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    if not results:
+        print(f"no {args.kind} matched {args.query!r}")
+        return 0
+    for item in results:
+        print(f"{item['id']:<28} poly={item['polycount']:<8} tags={item['tags'][:6]}")
+    print(f"\n{len(results)} result(s). CC0 -- free for any use, no attribution required.")
+    print(f"Fetch one with: previs asset-fetch-polyhaven <id> --kind <props|sets|characters> --as <name>")
+    return 0
+
+
+def asset_fetch(args):
+    """Download a Poly Haven asset and write a ready-to-use asset JSON that
+    references it -- the mesh-part equivalent of hand-writing a primitive
+    asset def, just with the file already fetched and positioned at the
+    origin, ready for position/rotation/scale tuning."""
+    from previs import polyhaven
+
+    try:
+        gltf_path = polyhaven.fetch(args.asset_id, resolution=args.resolution)
+        meta = polyhaven.info(args.asset_id)
+    except (RuntimeError, ValueError) as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    name = args.as_name or args.asset_id.lower()
+    asset = {
+        "asset_id": name,
+        "kind": args.kind.rstrip("s"),
+        "display_name": meta.get("name", args.asset_id),
+        "notes": f"Fetched from Poly Haven ({args.asset_id}), CC0. Real imported "
+        "geometry -- position/rotation_deg/scale below are a starting guess, "
+        "check with `previs render --preview` and adjust to fit the scene.",
+        "source_ref": f"https://polyhaven.com/a/{args.asset_id}",
+        "color": [0.6, 0.6, 0.6],
+        "parts": [
+            {
+                "shape": "mesh",
+                "file": str(gltf_path),
+                "position": [0.0, 0.0, 0.0],
+                "rotation_deg": [0.0, 0.0, 0.0],
+                "scale": 1.0,
+            }
+        ],
+    }
+    out = Path(args.out) if args.out else PROJECT_ROOT / "assets" / args.kind / f"{name}.json"
+    if out.is_file() and not args.force:
+        print(f"error: {out} already exists (pass --force to overwrite)", file=sys.stderr)
+        return 2
+    out.parent.mkdir(parents=True, exist_ok=True)
+    with out.open("w", encoding="utf-8") as handle:
+        json.dump(asset, handle, indent=2, ensure_ascii=False)
+        handle.write("\n")
+    print(f"[previs] fetched     {args.asset_id} -> {gltf_path}")
+    print(f"[previs] wrote       {out}")
+    print("[previs] scale/position are a starting guess -- preview and adjust before using in a shot.")
+    return 0
 
 
 def _collect_shot_paths(paths):
@@ -408,7 +515,23 @@ def main(argv=None):
         action="store_true",
         help="render a needs_blocking stub with placeholder camera/blocking",
     )
+    render_parser.add_argument(
+        "--preview", type=int, nargs="?", const=1, default=None, metavar="FRAME",
+        help="render one still frame (default: frame 1) plus a scene manifest, "
+        "instead of the full animated video -- a fast sanity check before "
+        "paying for the whole render",
+    )
     render_parser.set_defaults(func=render)
+
+    camera_path_parser = subparsers.add_parser(
+        "camera-path", help="visualize a shot's camera trajectory from outside the shot"
+    )
+    camera_path_parser.add_argument("shot")
+    camera_path_parser.add_argument("--mode", choices=("top", "angle"), default="angle")
+    camera_path_parser.add_argument("--out", default=None)
+    camera_path_parser.add_argument("--assets", default=None)
+    camera_path_parser.add_argument("--blender", default=None)
+    camera_path_parser.set_defaults(func=camera_path)
 
     import_parser = subparsers.add_parser(
         "import", help="import shot stubs from a story-pipeline file"
@@ -422,6 +545,25 @@ def main(argv=None):
     import_parser.add_argument("--out", default=None, help="output directory for stubs")
     import_parser.add_argument("--assets", default=None)
     import_parser.set_defaults(func=import_source)
+
+    asset_search_parser = subparsers.add_parser(
+        "asset-search-polyhaven", help="search Poly Haven's CC0 asset catalogue"
+    )
+    asset_search_parser.add_argument("query")
+    asset_search_parser.add_argument("--kind", default="models", choices=("models", "hdris", "textures"))
+    asset_search_parser.add_argument("--limit", type=int, default=15)
+    asset_search_parser.set_defaults(func=asset_search)
+
+    asset_fetch_parser = subparsers.add_parser(
+        "asset-fetch-polyhaven", help="download a Poly Haven asset and write its asset JSON"
+    )
+    asset_fetch_parser.add_argument("asset_id")
+    asset_fetch_parser.add_argument("--kind", default="props", choices=("props", "sets", "characters"))
+    asset_fetch_parser.add_argument("--as", dest="as_name", default=None, metavar="NAME")
+    asset_fetch_parser.add_argument("--resolution", default="1k", choices=("1k", "2k", "4k"))
+    asset_fetch_parser.add_argument("--out", default=None)
+    asset_fetch_parser.add_argument("--force", action="store_true")
+    asset_fetch_parser.set_defaults(func=asset_fetch)
 
     survey_parser = subparsers.add_parser(
         "survey", help="render a turntable of a set, with a figure in it for scale"

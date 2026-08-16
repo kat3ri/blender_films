@@ -250,6 +250,22 @@ def validate(shot, *, require_blocked=None):
                     errors.append(f"{label}: {field} must be [x, y] or [x, y, z]")
             if move_type == "orbit" and "center_id" not in move and "center_position" not in move:
                 errors.append(f"{label}: orbit needs center_id or center_position")
+            if move_type == "orbit":
+                for field in ("radius_m", "height_m"):
+                    value = move.get(field)
+                    if value is None:
+                        continue
+                    ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+                    if not ok and isinstance(value, list) and len(value) == 2:
+                        ok = all(
+                            isinstance(v, (int, float)) and not isinstance(v, bool)
+                            for v in value
+                        )
+                    if not ok:
+                        errors.append(
+                            f"{label}: {field} must be a number, or [start, end] to "
+                            "spiral/rise over the move"
+                        )
             for field in ("target_id", "center_id"):
                 ref = move.get(field)
                 if isinstance(ref, str) and ref not in seen_ids:

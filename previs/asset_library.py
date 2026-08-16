@@ -28,6 +28,20 @@ level (z=0) so poses can squash them vertically and they stay on the ground.
 ``capsule``, ``plane``. It is deliberately extensible: a future asset-sourcing
 step that downloads real geometry only has to add ``{"shape": "mesh", "file":
 "..."}`` here, with no change to the shot schema, compiler or filmmaking API.
+
+Any part (or set fixture) may carry a ``repeat`` instead of being hand-copied::
+
+    {"shape": "box", "position": [0, 0, 1.06], "size": [0.40, 0.40, 0.12],
+     "repeat": {"axis": "x", "count": 6, "spacing": 0.40}}
+
+This expands to ``count`` copies centred on ``position``, spaced along the
+given axis. It exists because hand-placing every repeated element makes
+authors quietly under-count real-world density (a stone wall's coping course,
+bottles on a shelf, planks, rivets) — and a video model conditioned on a
+control clip tends to take a too-small count *literally*, then hallucinate or
+warp geometry trying to reconcile it with what the scene "should" have.
+Reaching for a plausible count via ``repeat`` costs one line; hand-placing it
+costs one line per copy, which is exactly the gap that produces this bug.
 """
 
 from __future__ import annotations
@@ -102,6 +116,7 @@ class AssetLibrary:
 
         asset.setdefault("color", [0.6, 0.6, 0.6])
         asset.setdefault("parts", [])
+        asset["parts"] = _expand_part_repeats(asset["parts"])
         self._cache[key] = asset
         return asset
 
@@ -110,6 +125,45 @@ class AssetLibrary:
         if not directory.is_dir():
             return []
         return sorted(p.stem for p in directory.glob("*.json"))
+
+
+_REPEAT_AXES = {"x": 0, "y": 1, "z": 2}
+
+
+def _repeat_positions(position, repeat):
+    """Expand one position into ``count`` positions along one axis.
+
+    The row is centred on ``position``, so the original coordinate stays the
+    row's midpoint — an author picks where the *row* goes, not where copy zero
+    starts.
+    """
+    axis = _REPEAT_AXES[repeat.get("axis", "x")]
+    count = max(1, int(repeat.get("count", 1)))
+    spacing = float(repeat.get("spacing", 0.3))
+    base = list(position)
+    if len(base) == 2:
+        base.append(0.0)
+    start = base[axis] - spacing * (count - 1) / 2.0
+    positions = []
+    for i in range(count):
+        copy = list(base)
+        copy[axis] = start + i * spacing
+        positions.append(copy)
+    return positions
+
+
+def _expand_part_repeats(parts):
+    expanded = []
+    for part in parts:
+        repeat = part.get("repeat")
+        if not repeat:
+            expanded.append(part)
+            continue
+        for position in _repeat_positions(part.get("position", [0, 0, 0]), repeat):
+            copy = {k: v for k, v in part.items() if k != "repeat"}
+            copy["position"] = position
+            expanded.append(copy)
+    return expanded
 
 
 def expand_fixtures(shot, library):
@@ -135,11 +189,30 @@ def expand_fixtures(shot, library):
     props = shot.setdefault("props", [])
     existing = {p.get("id") for p in props if isinstance(p, dict)}
     for fixture in fixtures:
-        if not isinstance(fixture, dict) or fixture.get("id") in existing:
+        if not isinstance(fixture, dict) or not fixture.get("id"):
+            continue
+        repeat = fixture.get("repeat")
+        if repeat:
+            # Idempotency check uses the first derived id, since the
+            # un-suffixed base id is never itself added to `existing` below.
+            if f"{fixture['id']}_0" in existing:
+                continue
+            for index, position in enumerate(
+                _repeat_positions(fixture.get("position", [0, 0, 0]), repeat)
+            ):
+                copy = {k: v for k, v in fixture.items() if k != "repeat"}
+                copy["id"] = f"{fixture['id']}_{index}"
+                copy["position"] = position
+                copy["_from_set"] = set_asset_id
+                props.append(copy)
+                existing.add(copy["id"])
+            continue
+        if fixture["id"] in existing:
             continue
         merged = dict(fixture)
         merged["_from_set"] = set_asset_id
         props.append(merged)
+        existing.add(fixture["id"])
     return shot
 
 

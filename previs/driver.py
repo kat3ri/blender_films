@@ -20,7 +20,7 @@ _PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(_PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(_PROJECT_ROOT))
 
-from previs.compiler import compile_shot  # noqa: E402
+from previs.compiler import compile_camera_path, compile_shot  # noqa: E402
 from previs.schema import load_shot  # noqa: E402
 
 
@@ -31,6 +31,15 @@ def parse_args(argv):
     parser.add_argument("--out", required=True, help="output video path")
     parser.add_argument("--assets", default=None, help="assets root directory")
     parser.add_argument("--quiet", action="store_true")
+    parser.add_argument(
+        "--preview-frame", type=int, default=None,
+        help="render only this one frame (a PNG, not the video) plus a scene manifest",
+    )
+    parser.add_argument(
+        "--camera-path", default=None, choices=("top", "angle"),
+        help="render the camera's trajectory as a visible trail from an external "
+        "static camera, instead of the shot's own animated camera",
+    )
     return parser.parse_args(args)
 
 
@@ -38,7 +47,16 @@ def main():
     args = parse_args(sys.argv)
     try:
         shot = load_shot(args.shot)
-        compile_shot(shot, args.out, assets_root=args.assets, verbose=not args.quiet)
+        if args.camera_path:
+            compile_camera_path(
+                shot, args.out, assets_root=args.assets, verbose=not args.quiet,
+                mode=args.camera_path,
+            )
+            return
+        compile_shot(
+            shot, args.out, assets_root=args.assets, verbose=not args.quiet,
+            preview_frame=args.preview_frame,
+        )
     except Exception:
         # Blender swallows a bare traceback's exit code, so be explicit.
         traceback.print_exc()

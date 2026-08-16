@@ -87,6 +87,17 @@ Check `assets/sets/`, `assets/characters/`, `assets/props/` first. **A location
 is blocked out once and reused by every shot there** — never re-derive a set
 per shot.
 
+**Before hand-building furniture or set-dressing, check for a real asset.**
+`python -m previs.cli asset-search-polyhaven "<query>"` searches Poly Haven's
+CC0 catalogue (free for any use, no attribution) -- chairs, tables, doors,
+statues, and genuine architectural pieces (a search for "castle door" turns up
+an actual `large_castle_door` asset). Review the ranked list, pick one, then
+`asset-fetch-polyhaven <id> --kind props --as <name>` downloads it and writes
+a ready-to-use asset JSON. The one thing that stays hand-built primitives: a
+set's own bounding walls/floor/ceiling, since no catalogue asset can match a
+custom-dimensioned room -- everything placed *within* those walls is fair
+game for a real asset if a good match exists.
+
 A set stub with `"needs_blockout": true` is a placeholder box room. To make it
 real:
 
@@ -97,6 +108,25 @@ real:
 2. Otherwise build from the prose in `notes` / `_scene`.
 3. Express it as `parts` — boxes, planes, cylinders. Crude is correct. Leave
    the side the camera shoots from open so it can see in.
+
+   **Match the reference image's repeated-element density, not a token few.**
+   Count roughly how many stones/bottles/bricks/planks/rails are actually
+   visible and get within shouting distance of that — not exactly, but not 3
+   when the photo shows 15 either. A too-sparse count reads to a downstream
+   video model as a literal, deliberate feature count, and it will hallucinate
+   or warp the geometry trying to reconcile a control clip against what the
+   scene "should" have. Use `repeat` (see `previs/asset_library.py`) instead of
+   hand-placing each copy — `{"shape": "box", "position": [...], "size": [...],
+   "repeat": {"axis": "x", "count": 8, "spacing": 0.4}}` — so getting a
+   plausible count costs one line, not one line per copy. Give repeated
+   elements a small real gap (not perfectly flush) or they merge into one
+   smooth mass under flat shading with no visible seam, which defeats the
+   point.
+
+   A part (or a set's `fixtures`) may also carry its own `"color"` distinct
+   from the asset default — material variation (mortar, wood grain, a warning
+   light) reads as real detail instead of a flat mass. This is genuinely
+   rendered now (Workbench uses per-face materials), not free extra polygons.
 4. Remove `needs_blockout` and save. Every later shot at that location inherits it.
 5. **Look at it before using it:**
    `python -m previs.cli survey <set_id> --figure-at X Y`
@@ -216,6 +246,17 @@ actually happen:
 
 Fix and re-render before reporting. Then tell the user the output path and what
 they should look at.
+
+If a shot's camera behaviour looks wrong and it's not obvious *why* from the
+rendered frames alone (a push that never seems to arrive, an orbit that clips
+something, a direction that doesn't match what was authored) --
+`python -m previs.cli camera-path <shot.json> --mode top` renders the actual
+computed trajectory as a visible trail from outside the shot. The shot's own
+camera can never show where it itself is, so this is the only way to actually
+see a path rather than infer it from what that camera renders. Caught a real
+bug the first time it was used: a dolly's end position was ~14m short of the
+subject it was supposed to be arriving at, invisible in the rendered frames
+alone since each one looked individually plausible.
 
 ## 8. Revision notes
 

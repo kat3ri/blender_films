@@ -7,6 +7,38 @@ replaceable implementation detail rather than the product.
 
 Runs inside Blender only. Import it from a host-side process and it will fail
 on ``import bpy``, by design.
+
+Known Blender API gotchas hit while building this (recorded so a future
+session doesn't silently re-break one):
+
+* **Workbench ``shading.color_type`` must be ``"MATERIAL"``, not the default
+  ``"OBJECT"``.** ``OBJECT`` colours the whole object from ``obj.color`` and
+  silently ignores every per-face material — a per-part ``"color"`` override
+  in an asset JSON will build correctly and render as nothing. See
+  :func:`configure_render`.
+* **``matrix_world`` does not reflect an assigned ``.location`` /
+  ``.rotation_euler`` (or parenting) until the dependency graph is
+  evaluated** — reading it right after building the scene returns stale,
+  usually-identity transforms even for an unparented object. Call
+  ``bpy.context.view_layer.update()`` first. See :func:`scene_manifest`.
+* **bmesh face indices go stale after ``bmesh.ops`` calls add geometry** —
+  call ``bm.faces.ensure_lookup_table()`` again before indexing into
+  ``bm.faces``, both before measuring a face count and after adding more
+  geometry. See the per-part material grouping in :func:`build_proxy`.
+* **There is no native capsule primitive.** Build one from a cylinder plus
+  two ``uv_sphere`` caps composed with ``Matrix.Translation @ Matrix.Rotation
+  @ Matrix.Diagonal`` — see :func:`_emit_part`.
+* **A movie-strip render filepath gets Blender's own frame-range suffix
+  appended** — it will not land at the exact path you set. Render to a
+  scratch stem and move the result into place. See
+  :func:`render_control_video`.
+* **An imported glTF's `material.diffuse_color` is left at Blender's unset
+  default `(0.8, 0.8, 0.8)`**, even though the Principled BSDF's Base Color
+  is correctly wired to the source image texture — Workbench `MATERIAL`
+  shading reads only `diffuse_color` and never samples that texture, so an
+  imported real asset renders as flat mid-grey unless something explicitly
+  derives and assigns a representative colour first. Confirmed by an actual
+  render, not assumed — see :func:`_flatten_mesh_materials`.
 """
 
 from __future__ import annotations
@@ -19,7 +51,7 @@ import bpy
 from mathutils import Euler, Matrix
 
 from . import rig
-from .motion import POSE_TABLE
+from .motion import POSE_TABLE, look_at_euler, pad3
 
 UNIT_SPHERE_SEGMENTS = (16, 8)
 UNIT_CYLINDER_SEGMENTS = 16
@@ -158,21 +190,213 @@ def _flat_material(name, color):
 
 
 def build_proxy(name, asset, color_override=None):
-    """Create a single mesh object from an asset's part list."""
-    mesh = bpy.data.meshes.new(f"{name}_mesh")
-    bm = bmesh.new()
-    for part in asset.get("parts", []):
-        _emit_part(bm, part)
-    bm.to_mesh(mesh)
-    bm.free()
-    mesh.shade_flat()
+    """Build an object from an asset's part list — primitives, real imported
+    meshes, or a mix of both.
 
-    obj = bpy.data.objects.new(name, mesh)
-    color = list(color_override or asset.get("color", [0.6, 0.6, 0.6]))
-    obj.color = (color[0], color[1], color[2], 1.0)
-    mesh.materials.append(_flat_material(f"{name}_mat", color))
-    bpy.context.collection.objects.link(obj)
+    A part may carry its own ``color``, overriding the asset's default for
+    just that part — a shelf board can read lighter than its backing, a
+    bottle can read a different colour than the shelf it sits on. Primitive
+    parts are grouped by colour into material slots on one mesh (not one mesh
+    per part), so per-part colour costs material slots, not draw calls.
+
+    A part with ``"shape": "mesh"`` is a real imported asset (see
+    :func:`_import_mesh_part`) rather than procedural geometry, and cannot
+    share the bmesh merge primitives use — Blender's importers create their
+    own object(s). When an asset mixes primitives and mesh parts, or is
+    mesh-only, the root returned is an Empty with the primitive mesh (if any)
+    and every imported mesh part parented under it as children, so the whole
+    thing still moves as one object under ``place_character``/``place_prop``.
+    """
+    default_color = list(color_override or asset.get("color", [0.6, 0.6, 0.6]))
+    parts = asset.get("parts", [])
+    primitive_parts = [p for p in parts if p.get("shape") != "mesh"]
+    mesh_parts = [p for p in parts if p.get("shape") == "mesh"]
+
+    obj = None
+    if primitive_parts or not mesh_parts:
+        mesh = bpy.data.meshes.new(f"{name}_mesh")
+        bm = bmesh.new()
+        slot_for_color = {}
+        materials = []
+        for part in primitive_parts:
+            color = tuple(part.get("color", default_color))
+            if color not in slot_for_color:
+                slot_for_color[color] = len(materials)
+                materials.append(_flat_material(f"{name}_mat{len(materials)}", color))
+            bm.faces.ensure_lookup_table()
+            before = len(bm.faces)
+            _emit_part(bm, part)
+            bm.faces.ensure_lookup_table()
+            slot = slot_for_color[color]
+            for face in bm.faces[before:]:
+                face.material_index = slot
+
+        bm.to_mesh(mesh)
+        bm.free()
+        mesh.shade_flat()
+        for material in materials:
+            mesh.materials.append(material)
+
+        obj = bpy.data.objects.new(name, mesh)
+        obj.color = (default_color[0], default_color[1], default_color[2], 1.0)
+        bpy.context.collection.objects.link(obj)
+
+    if mesh_parts:
+        if obj is None:
+            obj = bpy.data.objects.new(name, None)
+            obj.empty_display_size = 0.05
+            bpy.context.collection.objects.link(obj)
+        for index, part in enumerate(mesh_parts):
+            _import_mesh_part(f"{name}_mesh{index}", part, obj, default_color)
+
     return obj
+
+
+def _import_mesh_part(name, part, parent, default_color):
+    """Import a real asset file as a child of ``parent``.
+
+    Supports glTF/GLB, FBX and OBJ — whichever a source (Poly Haven today)
+    happens to export. Multiple imported objects are joined into one, so a
+    mesh part behaves like every other part: one logical object with one
+    transform. Materials are always flattened to a solid colour (see
+    :func:`_flatten_mesh_materials`) — Workbench's ``MATERIAL`` shading only
+    ever reads ``material.diffuse_color`` and never samples an image texture,
+    so an imported asset's real PBR textures render as flat mid-grey
+    (Blender's unset default) unless something derives a representative
+    colour and assigns it explicitly. Confirmed by an actual render before
+    writing this, not assumed.
+    """
+    path = Path(part["file"])
+    if not path.is_file():
+        raise FileNotFoundError(f"mesh part file not found: {path}")
+
+    before = set(bpy.data.objects.keys())
+    suffix = path.suffix.lower()
+    if suffix in (".gltf", ".glb"):
+        bpy.ops.import_scene.gltf(filepath=str(path))
+    elif suffix == ".fbx":
+        bpy.ops.import_scene.fbx(filepath=str(path))
+    elif suffix == ".obj":
+        bpy.ops.wm.obj_import(filepath=str(path))
+    else:
+        raise ValueError(f"unsupported mesh file type {path.suffix!r}: {path}")
+
+    imported = [bpy.data.objects[n] for n in bpy.data.objects.keys() if n not in before]
+    mesh_objs = [o for o in imported if o.type == "MESH"]
+    if not mesh_objs:
+        raise RuntimeError(f"import of {path} produced no mesh objects")
+
+    # Non-mesh leftovers (an Empty root node, typically) must be collected
+    # *before* any join() runs: join() deletes every non-active mesh object
+    # outright, so a reference collected afterward and then touched (even
+    # just `.name` on it) raises "StructRNA of type Object has been removed"
+    # -- hit for real on a multi-part asset (large_castle_door: door leaf,
+    # hinges and frame import as separate meshes) even though it never
+    # showed up on the single-mesh assets tried first.
+    non_mesh_leftover = [o for o in imported if o.type != "MESH"]
+
+    if len(mesh_objs) > 1:
+        bpy.ops.object.select_all(action="DESELECT")
+        for o in mesh_objs:
+            o.select_set(True)
+        bpy.context.view_layer.objects.active = mesh_objs[0]
+        bpy.ops.object.join()
+        mesh_obj = bpy.context.view_layer.objects.active
+    else:
+        mesh_obj = mesh_objs[0]
+
+    for o in non_mesh_leftover:
+        if o.name in bpy.data.objects:
+            bpy.data.objects.remove(o, do_unlink=True)
+
+    override_color = part.get("color")
+    if override_color is not None:
+        color = list(override_color)
+        _replace_materials(mesh_obj, color)
+    else:
+        color = _flatten_mesh_materials(mesh_obj, default_color)
+    mesh_obj.color = (color[0], color[1], color[2], 1.0)
+
+    mesh_obj.name = name
+    mesh_obj.parent = parent
+    mesh_obj.location = tuple(pad3(part.get("position", [0.0, 0.0, 0.0])))
+    rotation = part.get("rotation_deg", [0.0, 0.0, 0.0])
+    mesh_obj.rotation_euler = Euler([math.radians(r) for r in rotation], "XYZ")
+    scale = part.get("scale", 1.0)
+    mesh_obj.scale = (
+        (scale, scale, scale) if isinstance(scale, (int, float)) else tuple(scale)
+    )
+    return mesh_obj
+
+
+def _flatten_mesh_materials(obj, fallback_color):
+    """Replace every material on ``obj`` with a flat colour sampled from its
+    original base-colour texture, falling back to ``fallback_color`` if a
+    slot has no texture to sample. Keeps an imported real asset visually
+    consistent with every hand-built primitive around it, instead of
+    rendering as flat mid-grey (see :func:`_import_mesh_part`)."""
+    representative = None
+    for slot_index, material in enumerate(list(obj.data.materials)):
+        color = fallback_color
+        if material and material.use_nodes:
+            principled = material.node_tree.nodes.get("Principled BSDF")
+            base = principled.inputs.get("Base Color") if principled else None
+            if base is not None:
+                if base.is_linked:
+                    image = _find_linked_image(base)
+                    sampled = _average_image_color(image) if image else None
+                    if sampled:
+                        color = sampled
+                else:
+                    color = list(base.default_value)[:3]
+        obj.data.materials[slot_index] = _flat_material(f"{obj.name}_flat{slot_index}", color)
+        if representative is None:
+            representative = color
+    if representative is None:
+        obj.data.materials.append(_flat_material(f"{obj.name}_flat0", fallback_color))
+        representative = fallback_color
+    return representative
+
+
+def _find_linked_image(socket):
+    for link in socket.links:
+        if link.from_node.type == "TEX_IMAGE" and link.from_node.image:
+            return link.from_node.image
+    return None
+
+
+def _average_image_color(image, sample_every=97):
+    """A texture's average colour via strided sampling.
+
+    A one-time per-asset cost paid at import, not per frame, so a plain
+    Python loop over ``image.pixels`` is fine — no numpy, no pip dependency.
+    ``sample_every`` (in pixels, not floats) trades accuracy for speed; 97 is
+    an arbitrary prime chosen only to avoid resonating with square texture
+    dimensions or tiling patterns.
+    """
+    try:
+        pixels = image.pixels[:]
+    except Exception:
+        return None
+    channels = max(1, image.channels or 4)
+    step = channels * sample_every
+    total = [0.0, 0.0, 0.0]
+    count = 0
+    for i in range(0, len(pixels) - channels + 1, step):
+        total[0] += pixels[i]
+        total[1] += pixels[i + 1] if channels > 1 else pixels[i]
+        total[2] += pixels[i + 2] if channels > 2 else pixels[i]
+        count += 1
+    return [c / count for c in total] if count else None
+
+
+def _replace_materials(obj, color):
+    material = _flat_material(f"{obj.name}_flat", color)
+    if not obj.data.materials:
+        obj.data.materials.append(material)
+        return
+    for slot_index in range(len(obj.data.materials)):
+        obj.data.materials[slot_index] = material
 
 
 def load_set(asset, name=None):
@@ -433,7 +657,12 @@ def configure_render(scene, engine="WORKBENCH", resolution=(960, 540), fps=12):
     if engine == "WORKBENCH":
         shading = scene.display.shading
         shading.light = "STUDIO"
-        shading.color_type = "OBJECT"  # uses each object's flat proxy colour
+        # MATERIAL (not OBJECT) so per-part colour overrides on a single mesh
+        # -- e.g. bottles vs. the shelf they sit on -- actually render. OBJECT
+        # mode reads only obj.color for the whole object and ignores the
+        # per-face materials build_proxy() assigns, which silently no-opped
+        # every per-part "color" override up to this point.
+        shading.color_type = "MATERIAL"
         shading.show_object_outline = True
         shading.show_shadows = True
         shading.show_cavity = True
@@ -474,3 +703,174 @@ def render_control_video(scene, output_path):
     for leftover in produced[:-1]:
         leftover.unlink()
     return output_path
+
+
+def render_preview_frame(scene, output_path, frame=1):
+    """Render exactly one still frame to a PNG — a cheap sanity check.
+
+    Catches a wrong blocking, occlusion, or missing asset before paying for a
+    full multi-second animated render and an FFmpeg encode. Not a scaled-down
+    version of the real render: same engine, same resolution, same materials
+    — only the frame count differs, so what it shows is what the full render
+    will show at that instant.
+    """
+    output_path = Path(output_path)
+    output_path.parent.mkdir(parents=True, exist_ok=True)
+
+    original_format = scene.render.image_settings.file_format
+    scene.frame_set(int(frame))
+    scene.render.image_settings.file_format = "PNG"
+    scene.render.filepath = str(output_path.with_suffix(""))
+    bpy.ops.render.render(write_still=True)
+    scene.render.image_settings.file_format = original_format
+
+    produced = output_path.with_suffix("").with_suffix(".png")
+    if produced != output_path and produced.is_file():
+        if output_path.exists():
+            output_path.unlink()
+        produced.replace(output_path)
+    if not output_path.is_file():
+        raise RuntimeError(f"Blender produced no still for {output_path}")
+    return output_path
+
+
+def scene_manifest(scene):
+    """A cheap, fast textual summary of every object actually in the scene.
+
+    The equivalent of a live-session `get_scene_info()` query, but computed
+    from the one-shot scene this process just built rather than round-tripped
+    over a socket. Meant to be printed and read by a human (or by me) before
+    trusting a render: catches "only 3 objects came out of a 6-fixture set"
+    class bugs for free, without ever opening the file.
+    """
+    # matrix_world does not reflect assigned .location/.rotation_euler (nor
+    # parenting) until the dependency graph is evaluated -- reading it right
+    # after building the scene silently returns stale (usually identity)
+    # transforms, which is exactly how the camera briefly reported (0,0,0)
+    # here despite having no parent at all.
+    bpy.context.view_layer.update()
+
+    lines = []
+    for obj in sorted(scene.objects, key=lambda o: o.name):
+        if obj.type not in ("MESH", "CAMERA"):
+            continue
+        # World-space, not obj.location: rig limbs are parented to joint
+        # empties with a local offset of zero (their shape is baked into the
+        # mesh itself), so obj.location on any of them reads (0,0,0) --
+        # correct locally, useless for a "where did this actually land" check.
+        world = obj.matrix_world.translation
+        loc = tuple(round(v, 2) for v in world)
+        if obj.type == "CAMERA":
+            lines.append(f"  {obj.name:<28} CAMERA  loc={loc}")
+            continue
+        dims = tuple(round(v, 2) for v in obj.dimensions)
+        faces = len(obj.data.polygons) if obj.data else 0
+        lines.append(f"  {obj.name:<28} MESH    loc={loc} dims={dims} faces={faces}")
+    return "\n".join(lines)
+
+
+def _lerp3(a, b, u):
+    return [a[i] + (b[i] - a[i]) * u for i in range(3)]
+
+
+def draw_camera_path(camera_keys, sample_every=3, marker_size=0.22):
+    """Lay a visible trail along the camera's actual computed trajectory —
+    small spheres at sampled positions, connected by thin segments, green at
+    the start shading to red at the end so direction of travel is unambiguous
+    at a glance. Also drops a slightly larger marker at every *individual*
+    move's boundary (a still-common source of "wrong" paths: two moves that
+    don't actually connect where you assumed).
+
+    This is the only way to actually see a camera path rather than infer it
+    from what the camera itself renders — the render-and-look loop this whole
+    system runs on can't diagnose "goes through a wall" or "arcs the wrong
+    way" because a shot's own camera obviously never sees itself.
+    """
+    if not camera_keys:
+        return []
+
+    green, red = (0.15, 0.85, 0.25), (0.85, 0.15, 0.15)
+    sampled = camera_keys[::sample_every]
+    if sampled[-1] is not camera_keys[-1]:
+        sampled.append(camera_keys[-1])
+
+    markers = []
+    for index, key in enumerate(sampled):
+        u = index / max(1, len(sampled) - 1)
+        color = _lerp3(green, red, u)
+        mesh = bpy.data.meshes.new(f"campath_dot{index}_mesh")
+        bm = bmesh.new()
+        bmesh.ops.create_uvsphere(
+            bm, u_segments=8, v_segments=6, radius=marker_size / 2.0,
+            matrix=Matrix.Translation(key.position),
+        )
+        bm.to_mesh(mesh)
+        bm.free()
+        obj = bpy.data.objects.new(f"campath_dot{index}", mesh)
+        obj.color = (color[0], color[1], color[2], 1.0)
+        mesh.materials.append(_flat_material(f"campath_dot{index}_mat", color))
+        bpy.context.collection.objects.link(obj)
+        markers.append(obj)
+
+        if index > 0:
+            start, end = sampled[index - 1].position, key.position
+            length = math.dist(start, end)
+            if length > 1e-4:
+                mid = _lerp3(start, end, 0.5)
+                seg_mesh = bpy.data.meshes.new(f"campath_seg{index}_mesh")
+                bm = bmesh.new()
+                bmesh.ops.create_cube(
+                    bm, size=1.0,
+                    matrix=Matrix.Translation(mid) @ _direction_to_euler(
+                        [end[i] - start[i] for i in range(3)]
+                    ).to_matrix().to_4x4() @ Matrix.Diagonal(
+                        (marker_size * 0.35, marker_size * 0.35, length, 1.0)
+                    ),
+                )
+                bm.to_mesh(seg_mesh)
+                bm.free()
+                seg = bpy.data.objects.new(f"campath_seg{index}", seg_mesh)
+                seg.color = (color[0], color[1], color[2], 1.0)
+                seg_mesh.materials.append(_flat_material(f"campath_seg{index}_mat", color))
+                bpy.context.collection.objects.link(seg)
+                markers.append(seg)
+
+    return markers
+
+
+def add_observer_camera(focus_points, lens_mm=24.0, mode="angle"):
+    """A static camera positioned from *outside* the shot, framing every
+    point in ``focus_points`` (camera path positions plus scene geometry
+    bounds) — the actual point of a path visualization, since the shot's own
+    camera can never show where it itself is.
+
+    ``mode``: "top" looks straight down (clearest read of left/right sweep
+    and whether the path clips geometry in plan view); "angle" is a 3/4
+    elevated view (clearer read of altitude change, e.g. a dolly's climb or
+    descent, which a top-down view flattens away entirely).
+    """
+    xs = [p[0] for p in focus_points]
+    ys = [p[1] for p in focus_points]
+    zs = [p[2] for p in focus_points]
+    center = [sum(xs) / len(xs), sum(ys) / len(ys), sum(zs) / len(zs)]
+    radius = max(
+        1.0,
+        max(math.dist([x, y], center[:2]) for x, y in zip(xs, ys)),
+        (max(zs) - min(zs)) / 2.0,
+    )
+
+    camera = create_camera(lens_mm, name="OBSERVER_CAMERA")
+    if mode == "top":
+        camera.location = (center[0], center[1], max(zs) + radius * 1.6 + 2.0)
+        aim = center
+    else:
+        distance = radius * 2.3 + 3.0
+        camera.location = (
+            center[0] - distance * 0.6,
+            center[1] - distance * 0.9,
+            max(zs) + radius * 0.7 + 2.0,
+        )
+        aim = center
+    camera.rotation_euler = Euler(tuple(look_at_euler(list(camera.location), aim)), "XYZ")
+    bpy.context.scene.camera = camera
+    return camera
