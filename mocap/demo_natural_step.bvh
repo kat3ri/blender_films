@@ -1,0 +1,75 @@
+HIERARCHY
+ROOT Hips
+{
+    OFFSET 0.0 0.0 0.0
+    CHANNELS 6 Xposition Yposition Zposition Zrotation Xrotation Yrotation
+    JOINT Spine
+    {
+        OFFSET 0.0 10.0 0.0
+        CHANNELS 3 Zrotation Xrotation Yrotation
+        JOINT Chest
+        {
+            OFFSET 0.0 10.0 0.0
+            CHANNELS 3 Zrotation Xrotation Yrotation
+            JOINT LeftArm
+            {
+                OFFSET 6.0 7.0 0.0
+                CHANNELS 3 Zrotation Xrotation Yrotation
+                End Site
+                {
+                    OFFSET 12.0 0.0 0.0
+                }
+            }
+            JOINT RightArm
+            {
+                OFFSET -6.0 7.0 0.0
+                CHANNELS 3 Zrotation Xrotation Yrotation
+                End Site
+                {
+                    OFFSET -12.0 0.0 0.0
+                }
+            }
+            JOINT LeftUpLeg
+            {
+                OFFSET 4.0 -8.0 0.0
+                CHANNELS 3 Zrotation Xrotation Yrotation
+                JOINT LeftLeg
+                {
+                    OFFSET 0.0 -16.0 0.0
+                    CHANNELS 3 Zrotation Xrotation Yrotation
+                    End Site
+                    {
+                        OFFSET 0.0 -14.0 0.0
+                    }
+                }
+            }
+            JOINT RightUpLeg
+            {
+                OFFSET -4.0 -8.0 0.0
+                CHANNELS 3 Zrotation Xrotation Yrotation
+                JOINT RightLeg
+                {
+                    OFFSET 0.0 -16.0 0.0
+                    CHANNELS 3 Zrotation Xrotation Yrotation
+                    End Site
+                    {
+                        OFFSET 0.0 -14.0 0.0
+                    }
+                }
+            }
+            End Site
+            {
+                OFFSET 0.0 8.0 0.0
+            }
+        }
+    }
+}
+MOTION
+Frames: 6
+Frame Time: 0.0333333
+0.0 0.0 0.0   0.0 0.0 0.0   0.0 2.0 0.0   0.0 1.0 0.0   0.0 4.0 10.0   0.0 -4.0 -10.0   0.0 -8.0 0.0   0.0 16.0 0.0   0.0 8.0 0.0   0.0 -16.0 0.0
+1.0 0.0 0.0   0.5 0.0 2.0   0.0 1.5 0.0   0.0 0.8 0.0   0.0 8.0 16.0   0.0 -8.0 -16.0   0.0 -14.0 0.0   0.0 28.0 0.0   0.0 4.0 0.0   0.0 -4.0 0.0
+2.0 0.0 0.0   1.0 0.0 4.0   0.0 1.0 0.0   0.0 0.6 0.0   0.0 10.0 20.0  0.0 -10.0 -20.0  0.0 -18.0 0.0   0.0 34.0 0.0   0.0 0.0 0.0   0.0 0.0 0.0
+3.0 0.0 0.0   1.0 0.0 -4.0  0.0 1.0 0.0   0.0 0.6 0.0   0.0 -10.0 -20.0 0.0 10.0 20.0   0.0 0.0 0.0    0.0 0.0 0.0    0.0 -18.0 0.0  0.0 34.0 0.0
+4.0 0.0 0.0   0.5 0.0 -2.0  0.0 1.5 0.0   0.0 0.8 0.0   0.0 -8.0 -16.0  0.0 8.0 16.0    0.0 4.0 0.0    0.0 2.0 0.0    0.0 -14.0 0.0  0.0 28.0 0.0
+5.0 0.0 0.0   0.0 0.0 0.0   0.0 2.0 0.0   0.0 1.0 0.0   0.0 -4.0 -10.0  0.0 4.0 10.0    0.0 8.0 0.0    0.0 4.0 0.0    0.0 -8.0 0.0   0.0 16.0 0.0

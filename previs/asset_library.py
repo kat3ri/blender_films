@@ -42,11 +42,18 @@ control clip tends to take a too-small count *literally*, then hallucinate or
 warp geometry trying to reconcile it with what the scene "should" have.
 Reaching for a plausible count via ``repeat`` costs one line; hand-placing it
 costs one line per copy, which is exactly the gap that produces this bug.
+
+For a curved surface (crenellations on a round tower), use radial mode
+instead of a straight-line axis::
+
+    {"shape": "box", "position": [cx, cy, z], "size": [0.4, 0.4, 0.3],
+     "repeat": {"mode": "radial", "count": 10, "radius": 2.2}}
 """
 
 from __future__ import annotations
 
 import json
+import math
 from pathlib import Path
 
 ASSET_KINDS = ("characters", "sets", "props")
@@ -131,18 +138,44 @@ _REPEAT_AXES = {"x": 0, "y": 1, "z": 2}
 
 
 def _repeat_positions(position, repeat):
-    """Expand one position into ``count`` positions along one axis.
+    """Expand one position into ``count`` positions, linear or radial.
 
-    The row is centred on ``position``, so the original coordinate stays the
-    row's midpoint — an author picks where the *row* goes, not where copy zero
-    starts.
+    Linear (default, ``"mode": "linear"``): a row centred on ``position``
+    along one axis, so the original coordinate stays the row's midpoint — an
+    author picks where the *row* goes, not where copy zero starts.
+
+    Radial (``"mode": "radial"``): copies arranged in a circle of
+    ``radius`` around ``position`` (its X/Y treated as the circle's centre,
+    Z held constant) — for crenellations on a round tower, rivets on a
+    cylinder, anything a straight-line ``repeat`` can't reach because the
+    surface it sits on is curved. ``start_deg``/``end_deg`` default to a full
+    0-360 sweep; each copy is only repositioned, not rotated to face outward
+    -- crude, matching everything else in this proxy system, and plenty for a
+    control video's silhouette. No per-copy rotation is the one thing this
+    can't do; if a future shot needs merlons that actually face outward,
+    that's the next thing to add here, not a reason to hand-place them.
     """
-    axis = _REPEAT_AXES[repeat.get("axis", "x")]
-    count = max(1, int(repeat.get("count", 1)))
-    spacing = float(repeat.get("spacing", 0.3))
     base = list(position)
     if len(base) == 2:
         base.append(0.0)
+    count = max(1, int(repeat.get("count", 1)))
+
+    if repeat.get("mode") == "radial":
+        radius = float(repeat.get("radius", 1.0))
+        start_deg = float(repeat.get("start_deg", 0.0))
+        end_deg = float(repeat.get("end_deg", 360.0))
+        full_circle = abs((end_deg - start_deg) % 360.0) < 1e-6
+        steps = count if full_circle else max(1, count - 1)
+        positions = []
+        for i in range(count):
+            angle = math.radians(start_deg + (end_deg - start_deg) * (i / steps))
+            positions.append(
+                [base[0] + radius * math.cos(angle), base[1] + radius * math.sin(angle), base[2]]
+            )
+        return positions
+
+    axis = _REPEAT_AXES[repeat.get("axis", "x")]
+    spacing = float(repeat.get("spacing", 0.3))
     start = base[axis] - spacing * (count - 1) / 2.0
     positions = []
     for i in range(count):

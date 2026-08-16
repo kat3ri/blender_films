@@ -83,9 +83,13 @@ def look_at_euler(position, target):
 class Track:
     """A character's motion: sparse keys, linearly interpolated."""
 
-    def __init__(self, object_id, keys):
+    def __init__(self, object_id, keys, mocap_segments=None):
         self.object_id = object_id
         self.keys = keys  # each: {"t", "position", "facing_deg", "pose"}
+        # Optional metadata used by rig animation backends that can consume
+        # mocap clips. Phase 1 records the intent here without changing the
+        # existing procedural motion output.
+        self.mocap_segments = list(mocap_segments or [])
         # Cumulative ground distance at each key. The gait cycle is a function
         # of distance rather than time, so stride always matches ground covered
         # and the feet cannot slide however fast or slow the walk is.
@@ -165,6 +169,13 @@ class Track:
         last = keys[-1]
         return list(last["position"]), last["facing_deg"], last["pose"]
 
+    def mocap_segment_at(self, t):
+        """Return mocap segment metadata active at time ``t``, if any."""
+        for segment in self.mocap_segments:
+            if segment["start_t"] - EPS <= t <= segment["end_t"] + EPS:
+                return segment
+        return None
+
 
 def _append_key(keys, t, position, facing_deg, pose):
     """Add a key, unwrapping facing so rotation takes the short way round."""
@@ -198,6 +209,7 @@ def build_character_track(character, resolve_point, duration):
     pose = character.get("start_pose", "stand")
 
     keys = []
+    mocap_segments = []
     _append_key(keys, 0.0, position, facing, pose)
 
     actions = sorted(
@@ -255,6 +267,46 @@ def build_character_track(character, resolve_point, duration):
             _append_key(keys, end_t, position, new_facing, next_pose)
             facing, pose = new_facing, next_pose
 
+        elif action_type == "mocap_clip":
+            # Phase 1: store clip directives while preserving current root motion.
+            mocap_segments.append(
+                {
+                    "start_t": start_t,
+                    "end_t": end_t,
+                    "clip_id": action["clip_id"],
+                    "clip_t0_s": float(action.get("clip_t0_s", 0.0)),
+                    "clip_t1_s": (
+                        float(action["clip_t1_s"])
+                        if action.get("clip_t1_s") is not None
+                        else None
+                    ),
+                    "clip_loop_from_s": (
+                        float(action["clip_loop_from_s"])
+                        if action.get("clip_loop_from_s") is not None
+                        else None
+                    ),
+                    "clip_loop_to_s": (
+                        float(action["clip_loop_to_s"])
+                        if action.get("clip_loop_to_s") is not None
+                        else None
+                    ),
+                    "source_fps": (
+                        float(action["source_fps"])
+                        if action.get("source_fps") is not None
+                        else None
+                    ),
+                    "blend_in_s": float(action.get("blend_in_s", 0.15)),
+                    "blend_out_s": float(action.get("blend_out_s", 0.15)),
+                    "pose_weight": float(action.get("pose_weight", 1.0)),
+                    "root_mode": action.get("root_mode", "lock_xy"),
+                    "source_up_axis": action.get("source_up_axis", "y"),
+                    "joint_map": dict(action.get("joint_map") or {}),
+                }
+            )
+            _append_key(keys, start_t, position, facing, next_pose)
+            _append_key(keys, end_t, position, facing, next_pose)
+            pose = next_pose
+
         else:  # idle
             _append_key(keys, start_t, position, facing, next_pose)
             _append_key(keys, end_t, position, facing, next_pose)
@@ -264,7 +316,7 @@ def build_character_track(character, resolve_point, duration):
     if duration > keys[-1]["t"] + EPS:
         _append_key(keys, duration, position, facing, pose)
 
-    return Track(character["id"], keys)
+    return Track(character["id"], keys, mocap_segments=mocap_segments)
 
 
 def build_tracks(shot, library):
@@ -404,7 +456,9 @@ def _eval_move(shot, move, tracks, library, t, stage_centre):
             position = [
                 current[i] + lerp(offset[i], end_offset[i], u) for i in range(3)
             ]
-        return position, _aim_point(shot, move, tracks, library, t, stage_centre, position)
+        look_ahead = max(0.0, float(move.get("look_ahead_s", 0.0)))
+        t_aim = min(float(shot["duration_seconds"]), t + look_ahead)
+        return position, _aim_point(shot, move, tracks, library, t_aim, stage_centre, position)
 
     if move_type == "orbit":
         if "center_id" in move:
@@ -511,7 +565,66 @@ def build_camera_keys(shot, tracks, library, fps=None):
 
         keys.append(CameraKey(frame_index + 1, t, position, rotation))
 
+    smoothing_s = max(0.0, float((camera or {}).get("smoothing_s", 0.0)))
+    if smoothing_s > 1e-6:
+        keys = _smooth_camera_keys(keys, fps, smoothing_s)
     return keys
+
+
+def _smooth_camera_keys(keys, fps, smoothing_s):
+    """Windowed smoothing to reduce per-frame jitter in camera motion.
+
+    Positions are averaged in a centred window; rotations are averaged in
+    continuous-unwrapped angle space, then wrapped back.
+    """
+    if len(keys) < 3:
+        return keys
+    radius = max(1, int(round(smoothing_s * fps)))
+    if radius <= 0:
+        return keys
+
+    unwrapped = []
+    prev = None
+    for key in keys:
+        rot = list(key.rotation_euler)
+        if prev is not None:
+            for i in range(3):
+                while rot[i] - prev[i] > math.pi:
+                    rot[i] -= 2.0 * math.pi
+                while rot[i] - prev[i] < -math.pi:
+                    rot[i] += 2.0 * math.pi
+        unwrapped.append(rot)
+        prev = rot
+
+    # Do not smooth across hard cuts (large frame-to-frame jumps).
+    cut_points = [0]
+    for i in range(1, len(keys)):
+        p0 = keys[i - 1].position
+        p1 = keys[i].position
+        dp = math.dist(p0, p1)
+        dr = max(abs(unwrapped[i][k] - unwrapped[i - 1][k]) for k in range(3))
+        if dp > 0.55 or dr > 0.35:
+            cut_points.append(i)
+    cut_points.append(len(keys))
+
+    smoothed = [None] * len(keys)
+    for seg_start, seg_end in zip(cut_points, cut_points[1:]):
+        for i in range(seg_start, seg_end):
+            key = keys[i]
+            start = max(seg_start, i - radius)
+            end = min(seg_end, i + radius + 1)
+            count = end - start
+            pos = [
+                sum(keys[j].position[k] for j in range(start, end)) / count
+                for k in range(3)
+            ]
+            rot = [
+                sum(unwrapped[j][k] for j in range(start, end)) / count
+                for k in range(3)
+            ]
+            rot = [((a + math.pi) % (2.0 * math.pi)) - math.pi for a in rot]
+            smoothed[i] = CameraKey(key.frame, key.t, pos, rot)
+    return smoothed
 
 
 def check_camera_bounds(keys, stage, margin_m=0.15):

@@ -30,6 +30,14 @@ _WINDOWS_GLOBS = (
 )
 
 
+def mocap_library_default_fps():
+    """SnapMoGen's default capture rate, resolved lazily so the module import
+    stays cheap and reads no files unless a mocap command runs."""
+    from previs import mocap_library
+
+    return mocap_library.DEFAULT_SNAPMOGEN_FPS
+
+
 def find_blender(explicit=None):
     """Locate a Blender executable, or raise with a useful message."""
     if explicit:
@@ -501,6 +509,180 @@ def info(args):
     return 0
 
 
+def mocap_inspect(args):
+    """Inspect a BVH mocap clip and report mapping coverage for this rig."""
+    from previs import mocap
+    from previs import mocap_bvh
+
+    cache_root = Path(args.cache).resolve() if args.cache else None
+    try:
+        clip_path = mocap.resolve_clip_path(
+            args.clip_id,
+            project_root=PROJECT_ROOT,
+            cache_root=cache_root,
+        )
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    try:
+        clip = mocap_bvh.load_bvh(clip_path)
+    except ValueError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+
+    print(f"[previs] clip path    {clip_path}")
+    print(f"[previs] root joint   {clip.root_joint}")
+    print(f"[previs] joints       {len(clip.joints)}")
+    print(f"[previs] frames       {clip.frame_count}")
+    print(f"[previs] frame time   {clip.frame_time_s:.6f}s")
+    print(f"[previs] duration     {clip.duration_seconds:.3f}s")
+
+    mapping = mocap.canonical_joint_map()
+    mapped = {}
+    for source_name in clip.joints:
+        target = mapping.get(source_name.lower())
+        if target:
+            mapped[source_name] = target
+    unique_targets = sorted(set(mapped.values()))
+    print(f"[previs] mapped       {len(mapped)} source joints -> "
+          f"{len(unique_targets)} rig joints")
+    if unique_targets:
+        print(f"[previs] rig targets  {', '.join(unique_targets)}")
+
+    if args.sample is not None:
+        t = max(0.0, float(args.sample))
+        sample = clip.sample_joint_rotations(min(t, clip.duration_seconds))
+        mapped_sample = mocap.map_rotations(sample, mapping, source_up_axis=args.source_up)
+        print(f"[previs] sample t={min(t, clip.duration_seconds):.3f}s "
+              f"(source_up={args.source_up})")
+        for joint_name in sorted(mapped_sample)[:20]:
+            x, y, z = mapped_sample[joint_name]
+            print(f"           {joint_name:>10}: [{x:7.2f}, {y:7.2f}, {z:7.2f}]")
+
+    return 0
+
+
+def mocap_search(args):
+    """Search the SnapMoGen caption library in plain language.
+
+    Prints ranked clip/frame-range candidates with their captions. Never
+    auto-picks one -- like `asset-search-polyhaven`, choosing a performance is a
+    judgment call. Copy a clip id into a shot yourself, or use `mocap-fetch` to
+    print a ready-to-paste action for one result.
+    """
+    from previs import mocap_library
+
+    cache_root = Path(args.cache).resolve() if args.cache else None
+    try:
+        entries = mocap_library.load_library(
+            caption_path=args.captions, cache_root=cache_root
+        )
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    results = mocap_library.search(
+        entries, args.query, limit=args.limit, min_frames=args.min_frames
+    )
+    if not results:
+        print(f"no motion matched {args.query!r} in {len(entries)} caption entries")
+        return 0
+
+    for score, entry in results:
+        secs = entry.duration_s(fps=args.fps)
+        caption = entry.best_caption()
+        if len(caption) > 140:
+            caption = caption[:137] + "..."
+        print(
+            f"{entry.clip_id():<34} "
+            f"f{entry.start_frame}-{entry.end_frame} ({secs:4.1f}s) "
+            f"score={score:5.1f}"
+        )
+        print(f"    {caption}")
+    print(
+        f"\n{len(results)} result(s) of {len(entries)} entries. "
+        f"Wire one into a shot with:\n"
+        f"  previs mocap-fetch \"<clip_id>#<start>#<end>\"   "
+        f"(prints a ready mocap_clip action)"
+    )
+    return 0
+
+
+def mocap_fetch(args):
+    """Print a ready-to-paste ``mocap_clip`` action for one caption entry.
+
+    Takes a full caption key (``clip#start#end``, as shown by `mocap-search`) and
+    resolves it into the clip_id + clip_t0_s/clip_t1_s a shot's actor action
+    wants, at the clip's own frame rate when the BVH is present.
+    """
+    from previs import mocap
+    from previs import mocap_bvh
+    from previs import mocap_library
+
+    cache_root = Path(args.cache).resolve() if args.cache else None
+    parsed = mocap_library.parse_key(args.key)
+    if not parsed:
+        print(
+            f"error: {args.key!r} is not a caption key of the form clip#start#end\n"
+            "       (run 'previs mocap-search <query>' to find one)",
+            file=sys.stderr,
+        )
+        return 2
+    clip_name, start_frame, end_frame = parsed
+
+    # Look up the entry so the printed action carries the caption as a comment.
+    caption = ""
+    try:
+        entries = mocap_library.load_library(
+            caption_path=args.captions, cache_root=cache_root
+        )
+        match = next(
+            (
+                e for e in entries
+                if e.clip_name == clip_name
+                and e.start_frame == start_frame
+                and e.end_frame == end_frame
+            ),
+            None,
+        )
+        if match is None:
+            match = next((e for e in entries if e.clip_name == clip_name), None)
+        entry = match or mocap_library.LibraryEntry(
+            key=args.key, clip_name=clip_name,
+            start_frame=start_frame, end_frame=end_frame, captions=(),
+        )
+        caption = entry.best_caption()
+    except FileNotFoundError:
+        entry = mocap_library.LibraryEntry(
+            key=args.key, clip_name=clip_name,
+            start_frame=start_frame, end_frame=end_frame, captions=(),
+        )
+
+    # Prefer the clip's own frame rate if we can read the BVH.
+    fps = args.fps
+    try:
+        clip_path = mocap.resolve_clip_path(
+            entry.clip_id(), project_root=PROJECT_ROOT, cache_root=cache_root
+        )
+        clip = mocap_bvh.load_bvh(clip_path)
+        if clip.frame_time_s > 0:
+            fps = 1.0 / clip.frame_time_s
+        print(f"[previs] clip file    {clip_path}")
+        print(f"[previs] clip fps     {fps:.3f}  ({clip.frame_count} frames)")
+    except (FileNotFoundError, ValueError) as exc:
+        print(f"[previs] note         BVH not read ({exc}); using fps={fps}")
+
+    action = mocap_library.entry_to_mocap_action(
+        entry, fps=fps, root_mode=args.root_mode, loop=args.loop
+    )
+    if caption:
+        print(f"[previs] caption      {caption}")
+    print("\n// paste into a shot character's \"actions\": [ ... ]\n")
+    print(json.dumps(action, indent=2))
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="previs", description=__doc__.splitlines()[0])
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -610,6 +792,71 @@ def main(argv=None):
     info_parser = subparsers.add_parser("info", help="show the resolved Blender install")
     info_parser.add_argument("--blender", default=None)
     info_parser.set_defaults(func=info)
+
+    mocap_inspect_parser = subparsers.add_parser(
+        "mocap-inspect", help="inspect a BVH clip and report joint-map coverage"
+    )
+    mocap_inspect_parser.add_argument("clip_id")
+    mocap_inspect_parser.add_argument(
+        "--sample", type=float, default=None,
+        help="print mapped joint angles at this clip time (seconds)",
+    )
+    mocap_inspect_parser.add_argument(
+        "--source-up", dest="source_up", default="y", choices=("y", "z"),
+        help="source up-axis for frame conversion (y=SnapMoGen, z=rig-native)",
+    )
+    mocap_inspect_parser.add_argument(
+        "--cache", default=None,
+        help="override PREVIS_MOCAP_CACHE for clip resolution",
+    )
+    mocap_inspect_parser.set_defaults(func=mocap_inspect)
+
+    mocap_search_parser = subparsers.add_parser(
+        "mocap-search", help="search the SnapMoGen caption library in plain language"
+    )
+    mocap_search_parser.add_argument("query")
+    mocap_search_parser.add_argument("--limit", type=int, default=15)
+    mocap_search_parser.add_argument(
+        "--min-frames", type=int, default=20,
+        help="ignore caption ranges shorter than this many frames",
+    )
+    mocap_search_parser.add_argument(
+        "--fps", type=float, default=mocap_library_default_fps(),
+        help="frame rate used to report clip durations",
+    )
+    mocap_search_parser.add_argument(
+        "--captions", default=None,
+        help="path to all_caption_clean.json (default: <cache>/SnapMoGen/...)",
+    )
+    mocap_search_parser.add_argument(
+        "--cache", default=None, help="override PREVIS_MOCAP_CACHE"
+    )
+    mocap_search_parser.set_defaults(func=mocap_search)
+
+    mocap_fetch_parser = subparsers.add_parser(
+        "mocap-fetch", help="print a ready mocap_clip action for a caption entry"
+    )
+    mocap_fetch_parser.add_argument(
+        "key", help="caption key clip#start#end (from mocap-search)"
+    )
+    mocap_fetch_parser.add_argument(
+        "--root-mode", default="lock_xy", choices=("lock_xy", "from_clip", "blend"),
+        help="how the clip's root translation drives the actor",
+    )
+    mocap_fetch_parser.add_argument(
+        "--loop", action="store_true", help="loop the caption range to fill the action"
+    )
+    mocap_fetch_parser.add_argument(
+        "--fps", type=float, default=mocap_library_default_fps(),
+        help="fallback frame rate if the BVH cannot be read",
+    )
+    mocap_fetch_parser.add_argument(
+        "--captions", default=None, help="path to all_caption_clean.json"
+    )
+    mocap_fetch_parser.add_argument(
+        "--cache", default=None, help="override PREVIS_MOCAP_CACHE"
+    )
+    mocap_fetch_parser.set_defaults(func=mocap_fetch)
 
     args = parser.parse_args(argv)
     return args.func(args)

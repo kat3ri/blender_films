@@ -188,6 +188,57 @@ file — no armature retargeting, no addon, still stdlib-only. See
 Characters without `"rig"` keep the flat capsule proxy and render exactly as
 before.
 
+## Mocap pose-control (real captured motion)
+
+A `mocap_clip` character action drives the rig from a real BVH motion-capture
+clip. It is fully wired into the Blender animator: sampled per frame, retargeted
+onto the proxy skeleton, blended in/out, and rendered. The bundled library is
+**SnapMoGen** (7,847 captured clips with natural-language captions).
+
+```jsonc
+{
+  "type": "mocap_clip",
+  "clip_id": "SnapMoGen/renamed_bvhs/ep2_00891",
+  "start_t": 1.0,
+  "end_t": 4.5,
+  "clip_t0_s": 0.2,
+  "clip_t1_s": 2.1,
+  "clip_loop_from_s": 0.6,
+  "clip_loop_to_s": 1.8,
+  "source_fps": 30,
+  "blend_in_s": 0.15,
+  "blend_out_s": 0.15,
+  "pose_weight": 1.0,
+  "root_mode": "lock_xy",
+  "source_up_axis": "y",
+  "joint_map": {
+    "LeftArm": "l_shoulder",
+    "LeftForeArm": "l_elbow"
+  }
+}
+```
+
+Validation constraints:
+
+- `clip_id` is required.
+- `pose_weight` must be in `[0, 1]`.
+- `root_mode` must be one of `lock_xy`, `from_clip`, `blend`.
+- `source_up_axis` must be one of `y`, `z`. Use `y` for SnapMoGen (its BVH is
+  Y-up); use `z` for clips already authored in this rig's Z-up convention. The
+  animator converts each mapped joint rotation by conjugating with the Y-up→Z-up
+  axis permutation, so real Y-up captures retarget onto the Z-up proxy with
+  arms/legs articulating on the correct axes.
+- If both loop bounds are set, `clip_loop_to_s` must be greater than
+  `clip_loop_from_s`.
+
+Camera quality controls for trajectory polish:
+
+- `camera.smoothing_s` applies cut-aware temporal smoothing to camera
+  position/rotation, reducing jitter on long follows while preserving deliberate
+  hard cuts.
+- `camera.moves[].look_ahead_s` (track moves) aims slightly ahead in time on a
+  moving target, which reduces reactive lag and feels more operator-like.
+
 ## How it fits together
 
 ```
@@ -237,6 +288,9 @@ python -m previs.cli import <project> <name>    # project from projects.json
 python -m previs.cli survey <set_id> [--mode push|pan|orbit] [--figure-at X Y]
 python -m previs.cli asset-search-polyhaven "<query>" [--kind models|hdris|textures]
 python -m previs.cli asset-fetch-polyhaven <id> --kind <props|sets|characters> --as <name>
+python -m previs.cli mocap-search "<query>" [--limit N] [--min-frames F] [--cache PATH]
+python -m previs.cli mocap-fetch <key> [--root-mode MODE] [--loop] [--cache PATH]
+python -m previs.cli mocap-inspect <clip_id> [--sample SECONDS] [--source-up y|z] [--cache PATH]
 python -m previs.cli camera-path <shot.json> [--mode top|angle]
 python -m previs.cli continuity <check|apply> [paths...]
 python -m previs.cli validate [paths...]        # defaults to every shot in shots/
@@ -258,6 +312,23 @@ real value is the manifest and an instantly-viewable PNG, not raw speed.
 `camera-path` renders the shot's *actual computed* camera trajectory as a
 visible trail (green start, red end) viewed from a static camera placed
 outside the shot, in either a top-down plan view or a 3/4 elevated view. The
+
+`mocap-search` queries the SnapMoGen caption index (40,900 captioned segments)
+and returns the best-matching clips with their `clip_id`, duration, and caption
+-- the same review-then-pick principle as `asset-search-polyhaven`. `mocap-fetch`
+takes a chosen key and emits a ready-to-paste `mocap_clip` action JSON.
+`mocap-inspect` parses a BVH clip and reports frame timing, joint count, and how
+many source joints map onto this rig's naming convention; `--sample T` prints the
+retargeted joint angles at time `T` (pass `--source-up y` for SnapMoGen).
+
+Clip ids resolve as paths, cache entries under `PREVIS_MOCAP_CACHE` (default
+`~/previs_mocap_cache`), or project-local files under `mocap/`. The SnapMoGen
+library lives under `PREVIS_MOCAP_CACHE/SnapMoGen/` (`all_caption_clean.json`
+plus `renamed_bvhs/*.bvh`); download it from the
+[SnapMoGen dataset](https://huggingface.co/datasets/Ericguo5513/SnapMoGen). A
+runnable real-motion demo is `shots/examples/mocap_snapmogen_walk.json`; a
+hand-authored Z-up demo (`mocap/demo_natural_step.bvh`) is at
+`shots/examples/mocap_phase1_template.json`.
 shot's own camera can never show where it itself is -- this exists because a
 shot can look wrong for reasons a rendered frame alone won't reveal: a dolly
 that stops short of its subject instead of arriving, an orbit whose radius

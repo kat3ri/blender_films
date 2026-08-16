@@ -29,6 +29,7 @@ ACTION_TYPES = {
     "idle": (),
     "turn_to": (),
     "interact": (),
+    "mocap_clip": ("clip_id",),
 }
 
 # Camera moves. Each carries start_t/end_t.
@@ -42,6 +43,9 @@ CAMERA_MOVE_TYPES = {
 }
 
 POSES = ("stand", "crouch", "kneel", "sit", "reach")
+
+MOCAP_ROOT_MODES = ("lock_xy", "from_clip", "blend")
+MOCAP_SOURCE_UP_AXES = ("y", "z")
 
 RENDER_ENGINES = ("WORKBENCH", "EEVEE")
 
@@ -175,6 +179,103 @@ def validate(shot, *, require_blocked=None):
                     errors.append(
                         f"{action_label}: {action_type} needs target_id or facing_deg"
                     )
+            if action_type == "mocap_clip":
+                clip_id = action.get("clip_id")
+                if not isinstance(clip_id, str) or not clip_id.strip():
+                    errors.append(f"{action_label}: clip_id must be a non-empty string")
+
+                for field in (
+                    "clip_t0_s",
+                    "clip_t1_s",
+                    "clip_loop_from_s",
+                    "clip_loop_to_s",
+                    "source_fps",
+                    "blend_in_s",
+                    "blend_out_s",
+                    "pose_weight",
+                    "root_scale_m",
+                ):
+                    value = action.get(field)
+                    if value is not None and (
+                        not isinstance(value, (int, float)) or isinstance(value, bool)
+                    ):
+                        errors.append(f"{action_label}: {field} must be a number")
+
+                if (
+                    isinstance(action.get("source_fps"), (int, float))
+                    and not isinstance(action.get("source_fps"), bool)
+                    and action["source_fps"] <= 0
+                ):
+                    errors.append(f"{action_label}: source_fps must be > 0")
+
+                for field in ("blend_in_s", "blend_out_s"):
+                    value = action.get(field)
+                    if (
+                        isinstance(value, (int, float))
+                        and not isinstance(value, bool)
+                        and value < 0
+                    ):
+                        errors.append(f"{action_label}: {field} must be >= 0")
+
+                root_scale = action.get("root_scale_m")
+                if (
+                    isinstance(root_scale, (int, float))
+                    and not isinstance(root_scale, bool)
+                    and root_scale <= 0
+                ):
+                    errors.append(f"{action_label}: root_scale_m must be > 0")
+
+                pose_weight = action.get("pose_weight")
+                if (
+                    isinstance(pose_weight, (int, float))
+                    and not isinstance(pose_weight, bool)
+                    and not (0.0 <= pose_weight <= 1.0)
+                ):
+                    errors.append(f"{action_label}: pose_weight must be in [0, 1]")
+
+                root_mode = action.get("root_mode")
+                if root_mode is not None and root_mode not in MOCAP_ROOT_MODES:
+                    errors.append(
+                        f"{action_label}: root_mode must be one of {MOCAP_ROOT_MODES}, "
+                        f"got {root_mode!r}"
+                    )
+
+                source_up = action.get("source_up_axis")
+                if source_up is not None and source_up not in MOCAP_SOURCE_UP_AXES:
+                    errors.append(
+                        f"{action_label}: source_up_axis must be one of "
+                        f"{MOCAP_SOURCE_UP_AXES}, got {source_up!r}"
+                    )
+
+                joint_map = action.get("joint_map")
+                if joint_map is not None:
+                    if not isinstance(joint_map, dict):
+                        errors.append(f"{action_label}: joint_map must be an object")
+                    else:
+                        for source_joint, target_joint in joint_map.items():
+                            if not isinstance(source_joint, str) or not source_joint.strip():
+                                errors.append(
+                                    f"{action_label}: joint_map keys must be non-empty strings"
+                                )
+                                break
+                            if not isinstance(target_joint, str) or not target_joint.strip():
+                                errors.append(
+                                    f"{action_label}: joint_map values must be non-empty strings"
+                                )
+                                break
+
+                loop_from = action.get("clip_loop_from_s")
+                loop_to = action.get("clip_loop_to_s")
+                if (
+                    isinstance(loop_from, (int, float))
+                    and not isinstance(loop_from, bool)
+                    and isinstance(loop_to, (int, float))
+                    and not isinstance(loop_to, bool)
+                    and loop_to <= loop_from
+                ):
+                    errors.append(
+                        f"{action_label}: clip_loop_to_s must be greater than clip_loop_from_s"
+                    )
 
     # --- props ------------------------------------------------------------
     props = shot.get("props", [])
@@ -223,6 +324,12 @@ def validate(shot, *, require_blocked=None):
         lens = camera.get("lens_mm", 35)
         if not isinstance(lens, (int, float)) or isinstance(lens, bool) or lens <= 0:
             errors.append("camera.lens_mm must be a positive number")
+        smoothing = camera.get("smoothing_s")
+        if smoothing is not None:
+            if not isinstance(smoothing, (int, float)) or isinstance(smoothing, bool):
+                errors.append("camera.smoothing_s must be a number")
+            elif smoothing < 0:
+                errors.append("camera.smoothing_s must be >= 0")
         moves = camera.get("moves", [])
         if not isinstance(moves, list):
             errors.append("camera.moves must be a list")
@@ -248,6 +355,12 @@ def validate(shot, *, require_blocked=None):
             for field in ("position", "end_position", "center_position", "target_position"):
                 if field in move and not _is_vec(move[field]):
                     errors.append(f"{label}: {field} must be [x, y] or [x, y, z]")
+            if "look_ahead_s" in move:
+                value = move["look_ahead_s"]
+                if not isinstance(value, (int, float)) or isinstance(value, bool):
+                    errors.append(f"{label}: look_ahead_s must be a number")
+                elif value < 0:
+                    errors.append(f"{label}: look_ahead_s must be >= 0")
             if move_type == "orbit" and "center_id" not in move and "center_position" not in move:
                 errors.append(f"{label}: orbit needs center_id or center_position")
             if move_type == "orbit":

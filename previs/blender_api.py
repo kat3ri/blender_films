@@ -50,6 +50,8 @@ import bmesh
 import bpy
 from mathutils import Euler, Matrix
 
+from . import mocap
+from . import mocap_bvh
 from . import rig
 from .motion import POSE_TABLE, look_at_euler, pad3
 
@@ -565,6 +567,41 @@ def build_rigged_proxy(name, asset):
             bpy.context.collection.objects.link(tip)
             tip.parent = joints[joint_name]
 
+    # An object carried in a hand (a staff, a lantern). Parented to the hand
+    # joint, so it inherits the hand's per-frame keyframes for free — it swings
+    # with the arm on a walk and lowers when the body kneels, no extra
+    # animation. Geometry lives on the character asset in the hand's local
+    # frame; crude primitives, same as any proxy.
+    held = asset.get("held_prop")
+    if isinstance(held, dict):
+        joint_name = held.get("joint", "r_hand")
+        anchor = joints.get(joint_name)
+        if anchor is not None:
+            held_colour = list(held.get("color", colour))
+            held_mat = _flat_material(f"{name}_held_mat", held_colour)
+            base = [v * scale for v in held.get("offset", [0.0, 0.0, 0.0])]
+            mesh = bpy.data.meshes.new(f"{name}_held_mesh")
+            bm = bmesh.new()
+            for part in held.get("parts", []):
+                _emit_part(bm, {
+                    "shape": part.get("shape", "cylinder"),
+                    "position": [base[i] + part.get("position", [0.0, 0.0, 0.0])[i] * scale
+                                 for i in range(3)],
+                    "size": [v * scale for v in part.get("size", [0.05, 0.05, 1.0])],
+                    "rotation_deg": part.get("rotation_deg", [0.0, 0.0, 0.0]),
+                })
+            bm.to_mesh(mesh)
+            bm.free()
+            mesh.shade_flat()
+            mesh.materials.append(held_mat)
+            prop = bpy.data.objects.new(f"{name}_held", mesh)
+            prop.color = (held_colour[0], held_colour[1], held_colour[2], 1.0)
+            bpy.context.collection.objects.link(prop)
+            prop.parent = anchor
+            prop.rotation_euler = Euler(
+                [math.radians(r) for r in held.get("rotation_deg", [0.0, 0.0, 0.0])], "XYZ"
+            )
+
     return root, joints
 
 
@@ -577,11 +614,106 @@ def _direction_to_euler(direction):
     return Euler((math.atan2(horizontal, z), 0.0, math.atan2(y, x) + math.pi / 2.0), "XYZ")
 
 
+def _blend_angle_deg(a, b, w):
+    """Blend two angles via the shortest rotational delta."""
+    delta = (b - a + 180.0) % 360.0 - 180.0
+    return a + delta * w
+
+
+def _blend_xyz_deg(a, b, w):
+    return [_blend_angle_deg(a[i], b[i], w) for i in range(3)]
+
+
+def _apply_root_mode(position, facing_deg, segment, clip_root, runtime_state, t_s):
+    """Optional root translation from clip for from_clip/blend modes.
+
+    Clip translation units are source-dependent, usually centimeters, so
+    root_scale_m defaults to 0.01.
+    """
+    if clip_root is None:
+        return list(position)
+
+    mode = segment.get("root_mode", "lock_xy")
+    if mode == "lock_xy":
+        return list(position)
+
+    key = id(segment)
+    state = runtime_state.setdefault(key, {})
+    if "clip_root0" not in state:
+        state["clip_root0"] = list(clip_root)
+    if "world_start" not in state:
+        state["world_start"] = list(position)
+
+    root_scale_m = float(segment.get("root_scale_m", 0.01))
+    dx_local = (clip_root[0] - state["clip_root0"][0]) * root_scale_m
+    dy_local = (clip_root[1] - state["clip_root0"][1]) * root_scale_m
+    dz_world = (clip_root[2] - state["clip_root0"][2]) * root_scale_m
+
+    yaw = math.radians(facing_deg)
+    dx_world = dx_local * math.cos(yaw) - dy_local * math.sin(yaw)
+    dy_world = dx_local * math.sin(yaw) + dy_local * math.cos(yaw)
+    target = [
+        state["world_start"][0] + dx_world,
+        state["world_start"][1] + dy_world,
+        state["world_start"][2] + dz_world,
+    ]
+
+    if mode == "from_clip":
+        return target
+    # blend mode
+    w = mocap.segment_blend_weight(segment, t_s)
+    return [position[i] + (target[i] - position[i]) * w for i in range(3)]
+
+
+def _mocap_overlay(angles, track, t, runtime_state):
+    """Blend active mocap segment onto procedural joint angles in-place."""
+    segment = track.mocap_segment_at(t)
+    if not segment:
+        return angles, None, None
+
+    clip_id = segment["clip_id"]
+    clip_path = runtime_state["clip_paths"].get(clip_id)
+    clip = runtime_state["clips"].get(clip_id)
+    if clip is None:
+        try:
+            clip_path = mocap.resolve_clip_path(clip_id)
+            clip = mocap_bvh.load_bvh(clip_path)
+            runtime_state["clips"][clip_id] = clip
+            runtime_state["clip_paths"][clip_id] = clip_path
+        except (FileNotFoundError, ValueError) as exc:
+            if clip_id not in runtime_state["warned_missing"]:
+                runtime_state["warned_missing"].add(clip_id)
+                print(f"[previs] WARNING     mocap clip {clip_id!r} skipped: {exc}")
+            return angles, None, None
+
+    clip_t = mocap.clip_time_for_segment(segment, t, clip.duration_seconds)
+    source_rot = clip.sample_joint_rotations(clip_t)
+    mapped = mocap.map_rotations(
+        source_rot,
+        mocap.canonical_joint_map(segment.get("joint_map")),
+        source_up_axis=segment.get("source_up_axis", "y"),
+    )
+    w = mocap.segment_blend_weight(segment, t)
+    if w > 1e-6:
+        for joint_name, source_angle in mapped.items():
+            current = angles.get(joint_name)
+            if current is None:
+                continue
+            angles[joint_name] = _blend_xyz_deg(current, source_angle, w)
+    return angles, segment, clip.sample_root_translation(clip_t)
+
+
 def animate_rigged_character(root, joints, track, asset, fps, frame_end):
     """Keyframe an articulated character: root transform plus every joint."""
     gait = rig.resolve_gait(asset)
     scale = rig.scale_for(asset)
     hips_rest_z = rig.JOINTS["hips"]["offset"][2] * scale
+    runtime_state = {
+        "clips": {},
+        "clip_paths": {},
+        "warned_missing": set(),
+        "root_segments": {},
+    }
 
     for frame in range(1, frame_end + 1):
         t = (frame - 1) / fps
@@ -591,6 +723,15 @@ def animate_rigged_character(root, joints, track, asset, fps, frame_end):
             track.distance_at(t), track.speed_at(t), pose, gait,
             previous_pose=previous_pose, pose_u=pose_u,
         )
+
+        angles, segment, clip_root = _mocap_overlay(angles, track, t, runtime_state)
+        if segment is not None:
+            key = id(segment)
+            state = runtime_state["root_segments"].setdefault(key, {"last_t": t})
+            state["last_t"] = t
+            position = _apply_root_mode(
+                position, facing, segment, clip_root, runtime_state["root_segments"], t
+            )
 
         root.location = tuple(position)
         root.rotation_euler = Euler((0.0, 0.0, math.radians(facing)), "XYZ")
