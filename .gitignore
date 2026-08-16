@@ -4,6 +4,7 @@ prompts/
 assets/
 shots/
 *.mp4
+projects.json
 
 # Blender scratch
 *.blend

@@ -86,13 +86,22 @@ def rest_offset(from_joint, to_joint):
         total = [total[i] + offset[i] for i in range(3)]
     return total
 
-# Tip geometry for joints with no child bone.
+# Tip geometry for joints with no child bone. Each joint maps to a *list* of
+# parts so the head can carry more than one piece.
 TIPS = {
-    "head":   {"shape": "uv_sphere", "size": [0.19, 0.20, 0.23], "offset": [0.01, 0.0, 0.10]},
-    "l_hand": {"shape": "uv_sphere", "size": [0.09, 0.09, 0.09], "offset": [0.0, 0.05, 0.0]},
-    "r_hand": {"shape": "uv_sphere", "size": [0.09, 0.09, 0.09], "offset": [0.0, -0.05, 0.0]},
-    "l_foot": {"shape": "box",       "size": [0.24, 0.10, 0.08], "offset": [0.06, 0.0, -0.04]},
-    "r_foot": {"shape": "box",       "size": [0.24, 0.10, 0.08], "offset": [0.06, 0.0, -0.04]},
+    "head": [
+        {"shape": "uv_sphere", "size": [0.19, 0.20, 0.23], "offset": [0.01, 0.0, 0.10]},
+        # A small forward-pointing nose. Without it, front and back are
+        # indistinguishable on this proxy — which quietly breaks any shot whose
+        # whole point is a camera reveal of the character's front (an orbit,
+        # a turn-to-camera). Rest-pose front is local +X.
+        {"shape": "cone", "size": [0.05, 0.05, 0.10], "offset": [0.185, 0.0, 0.07],
+         "rotation_deg": [0.0, 90.0, 0.0]},
+    ],
+    "l_hand": [{"shape": "uv_sphere", "size": [0.09, 0.09, 0.09], "offset": [0.0, 0.05, 0.0]}],
+    "r_hand": [{"shape": "uv_sphere", "size": [0.09, 0.09, 0.09], "offset": [0.0, -0.05, 0.0]}],
+    "l_foot": [{"shape": "box", "size": [0.24, 0.10, 0.08], "offset": [0.06, 0.0, -0.04]}],
+    "r_foot": [{"shape": "box", "size": [0.24, 0.10, 0.08], "offset": [0.06, 0.0, -0.04]}],
 }
 
 # T-pose is the rest and the mocap convention, but nobody stands in one. This

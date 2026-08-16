@@ -324,20 +324,22 @@ def build_rigged_proxy(name, asset):
         limb.rotation_euler = _direction_to_euler(child_offset)
 
     # Head, hands, feet.
-    for joint_name, spec in rig.TIPS.items():
-        mesh = bpy.data.meshes.new(f"{name}_{joint_name}_tip_mesh")
-        bm = bmesh.new()
-        _emit_part(bm, {"shape": spec["shape"],
-                        "position": [v * scale for v in spec["offset"]],
-                        "size": [v * scale for v in spec["size"]]})
-        bm.to_mesh(mesh)
-        bm.free()
-        mesh.shade_flat()
-        mesh.materials.append(material)
-        tip = bpy.data.objects.new(f"{name}_{joint_name}_tip", mesh)
-        tip.color = (colour[0], colour[1], colour[2], 1.0)
-        bpy.context.collection.objects.link(tip)
-        tip.parent = joints[joint_name]
+    for joint_name, specs in rig.TIPS.items():
+        for index, spec in enumerate(specs):
+            mesh = bpy.data.meshes.new(f"{name}_{joint_name}_tip{index}_mesh")
+            bm = bmesh.new()
+            _emit_part(bm, {"shape": spec["shape"],
+                            "position": [v * scale for v in spec["offset"]],
+                            "size": [v * scale for v in spec["size"]],
+                            "rotation_deg": spec.get("rotation_deg", [0.0, 0.0, 0.0])})
+            bm.to_mesh(mesh)
+            bm.free()
+            mesh.shade_flat()
+            mesh.materials.append(material)
+            tip = bpy.data.objects.new(f"{name}_{joint_name}_tip{index}", mesh)
+            tip.color = (colour[0], colour[1], colour[2], 1.0)
+            bpy.context.collection.objects.link(tip)
+            tip.parent = joints[joint_name]
 
     return root, joints
 
