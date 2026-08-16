@@ -1,0 +1,21 @@
+{
+  "_comment": "Source repos this previs station imports from. Lets you write 'previs import fortress a1s1' instead of a full path. 'writeback' is null by default: nothing is ever written into your story repos unless you set a path here.",
+  "projects": {
+    "fortress": {
+      "format": "fortress",
+      "display_name": "Fortress in the Eye of Time",
+      "source_root": "D:/projects/video_agent_orchestration/reference_texts/extracted/fortress_in_the_eye_of_time/worldbuild/references",
+      "pattern": "{name}.json",
+      "shots_dir": "shots/fortress",
+      "writeback": null
+    },
+    "ums": {
+      "format": "minimax",
+      "display_name": "Story Framework — MiniMax H3 packages",
+      "source_root": "D:/story_framework/06_prompts/minimax",
+      "pattern": "{name}*.md",
+      "shots_dir": "shots/minimax",
+      "writeback": null
+    }
+  }
+}

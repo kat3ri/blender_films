@@ -1,0 +1,477 @@
+"""Host-side launcher. Finds Blender, runs the driver, reports the result.
+
+    python -m previs.cli render shots/examples/synth_test_shot.json
+    python -m previs.cli validate
+    python -m previs.cli info
+
+This is the only piece the director agent needs to invoke; it never imports
+``bpy`` and runs on the system Python.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+from pathlib import Path
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+DRIVER = PROJECT_ROOT / "previs" / "driver.py"
+DEFAULT_RENDER_DIR = PROJECT_ROOT / "renders"
+REGISTRY = PROJECT_ROOT / "projects.json"
+
+# Searched newest-first when Blender is not on PATH and PREVIS_BLENDER is unset.
+_WINDOWS_GLOBS = (
+    "C:/Program Files/Blender Foundation/Blender */blender.exe",
+    "C:/Program Files (x86)/Blender Foundation/Blender */blender.exe",
+)
+
+
+def find_blender(explicit=None):
+    """Locate a Blender executable, or raise with a useful message."""
+    if explicit:
+        path = Path(explicit)
+        if not path.is_file():
+            raise FileNotFoundError(f"--blender path does not exist: {path}")
+        return path
+
+    from_env = os.environ.get("PREVIS_BLENDER")
+    if from_env and Path(from_env).is_file():
+        return Path(from_env)
+
+    on_path = shutil.which("blender")
+    if on_path:
+        return Path(on_path)
+
+    candidates = []
+    for pattern in _WINDOWS_GLOBS:
+        root = Path(pattern).anchor
+        relative = Path(pattern).relative_to(root)
+        candidates.extend(Path(root).glob(str(relative)))
+    if candidates:
+        # "Blender 4.5" sorts after "Blender 4.4"; good enough for point releases.
+        return sorted(candidates, key=lambda p: p.parent.name)[-1]
+
+    raise FileNotFoundError(
+        "Could not find Blender. Install it (winget install "
+        "BlenderFoundation.Blender.LTS.4.5), put it on PATH, set PREVIS_BLENDER, "
+        "or pass --blender."
+    )
+
+
+def render(args):
+    blender = find_blender(args.blender)
+    shot_path = Path(args.shot).resolve()
+    if not shot_path.is_file():
+        print(f"error: no such shot file: {shot_path}", file=sys.stderr)
+        return 2
+
+    with shot_path.open(encoding="utf-8") as handle:
+        shot = json.load(handle)
+    if shot.get("status") == "needs_blocking" and not args.allow_unblocked:
+        print(
+            f"error: {shot_path.name} is still status 'needs_blocking'.\n"
+            "       Author its blocking first (see the previs-blocking skill), "
+            "or pass --allow-unblocked\n"
+            "       to render the stub with a default wide static camera.",
+            file=sys.stderr,
+        )
+        return 2
+
+    output = Path(args.out) if args.out else DEFAULT_RENDER_DIR / f"{shot.get('shot_id', shot_path.stem)}.mp4"
+    output = output.resolve()
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    command = [
+        str(blender),
+        "--background",
+        "--factory-startup",
+        "--python",
+        str(DRIVER),
+        "--",
+        str(shot_path),
+        "--out",
+        str(output),
+    ]
+    if args.assets:
+        command += ["--assets", str(Path(args.assets).resolve())]
+
+    print(f"[previs] blender     {blender}")
+    result = subprocess.run(command)
+    if result.returncode != 0:
+        print(f"error: Blender exited with code {result.returncode}", file=sys.stderr)
+        return result.returncode
+    if not output.is_file():
+        print(f"error: expected output not written: {output}", file=sys.stderr)
+        return 1
+
+    size_kb = output.stat().st_size / 1024.0
+    print(f"[previs] control video: {output}  ({size_kb:.0f} KB)")
+    return 0
+
+
+def load_registry():
+    if not REGISTRY.is_file():
+        return {}
+    with REGISTRY.open(encoding="utf-8") as handle:
+        return json.load(handle).get("projects", {})
+
+
+def resolve_source(target, name):
+    """Resolve (project-or-format, name-or-path) into (format, path, shots_dir).
+
+    Accepts either a registry project name plus a short source name, or a raw
+    format plus a full path, so the long-path form keeps working.
+    """
+    registry = load_registry()
+
+    if target in registry:
+        entry = registry[target]
+        root = Path(entry["source_root"])
+        if not root.is_dir():
+            raise FileNotFoundError(
+                f"project {target!r} points at a source_root that does not exist: {root}\n"
+                f"       fix it in {REGISTRY}"
+            )
+        direct = Path(name)
+        if direct.is_file():
+            matches = [direct]
+        else:
+            matches = sorted(root.glob(entry.get("pattern", "{name}*").format(name=name)))
+        if not matches:
+            available = sorted(p.name for p in root.iterdir() if p.is_file())[:12]
+            raise FileNotFoundError(
+                f"no source matching {name!r} in {root}\n"
+                f"       available: {', '.join(available)}"
+            )
+        shots_dir = PROJECT_ROOT / entry.get("shots_dir", f"shots/{target}")
+        return entry["format"], matches[0].resolve(), shots_dir
+
+    # Raw form: `import fortress <path>`
+    path = Path(name)
+    if not path.is_file():
+        known = ", ".join(sorted(registry)) or "none configured"
+        raise FileNotFoundError(
+            f"no such source file: {path}\n"
+            f"       (and {target!r} is not a known project; known projects: {known})"
+        )
+    return target, path.resolve(), PROJECT_ROOT / "shots" / target
+
+
+def import_source(args):
+    """Turn a story-pipeline file into needs_blocking shot stubs."""
+    try:
+        source_format, source, default_out = resolve_source(args.target, args.name)
+    except FileNotFoundError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 2
+
+    assets_root = Path(args.assets).resolve() if args.assets else PROJECT_ROOT / "assets"
+    out_dir = Path(args.out).resolve() if args.out else default_out
+
+    review_notes = []
+    if source_format == "fortress":
+        from previs.importers.fortress_importer import import_scene
+
+        written, created = import_scene(source, out_dir, assets_root)
+    else:
+        from previs.importers.minimax_importer import import_episode
+
+        written, created, review_notes = import_episode(source, out_dir, assets_root)
+
+    if not written:
+        print(f"error: no shots could be parsed out of {source}", file=sys.stderr)
+        return 1
+
+    print(f"[previs] imported {len(written)} shot stub(s) from {source.name} -> {out_dir}")
+    for path in written:
+        print(f"           {path.name}")
+    if created:
+        print(f"[previs] created {len(created)} placeholder asset(s):")
+        for asset in created:
+            print(f"           {asset}")
+    for note in review_notes:
+        print(f"[previs] NOTE     {note}")
+    print(
+        "\n[previs] These stubs have no blocking yet. Author positions, actions and\n"
+        "         camera moves (see .claude/skills/previs-blocking), flip status to\n"
+        "         'blocked', then render."
+    )
+    return 0
+
+
+def _survey_move(args, span_x, span_y, radius, stand):
+    """Pick the survey camera move.
+
+    Default is a push from the open -Y end down the length of the space: it
+    matches the viewpoint reference plates are usually shot from, so the survey
+    is directly comparable to the image the set was built from, and it travels
+    along the open axis so it cannot drive through furniture.
+    """
+    duration = float(args.duration)
+    if args.mode == "orbit":
+        return {
+            "type": "orbit", "center_position": [0.0, 0.0, 0.0], "radius_m": radius,
+            "start_deg": -90, "end_deg": 270, "height_m": args.height,
+            "start_t": 0.0, "end_t": duration, "easing": "linear",
+        }
+    if args.mode == "pan":
+        return {
+            "type": "pan", "position": [stand[0], stand[1], args.height],
+            "start_deg": -90, "end_deg": 270, "pitch_deg": -6.0,
+            "start_t": 0.0, "end_t": duration, "easing": "linear",
+        }
+    return {
+        "type": "dolly",
+        "position": [stand[0], -(span_y - 0.4), args.height],
+        "end_position": [stand[0], -(span_y - 3.0), args.height - 0.05],
+        "target_position": [stand[0], span_y * 0.25, 1.25],
+        "start_t": 0.0, "end_t": duration, "easing": "smooth",
+    }
+
+
+def survey(args):
+    """Render a turntable of a set so you can see the space you just built.
+
+    Sets are authored once and reused by every shot at that location, so it is
+    worth looking at one on its own — with a human-scale figure standing in it —
+    before blocking anything inside it.
+    """
+    import tempfile
+
+    from previs.asset_library import AssetLibrary
+
+    library = AssetLibrary(args.assets)
+    if not library.exists("sets", args.set_id):
+        available = ", ".join(library.list_assets("sets")) or "none"
+        print(f"error: no set asset {args.set_id!r}\n       available: {available}",
+              file=sys.stderr)
+        return 2
+    asset = library.get("sets", args.set_id)
+
+    # Size the turntable from the set's own footprint.
+    span_x = span_y = 6.0
+    for part in asset.get("parts", []):
+        position, size = part.get("position", [0, 0, 0]), part.get("size", [1, 1, 1])
+        span_x = max(span_x, abs(position[0]) + size[0] / 2.0)
+        span_y = max(span_y, abs(position[1]) + size[1] / 2.0)
+    radius = args.radius or max(2.5, min(span_x, span_y) * 0.62)
+    stand = list(args.camera_at) if args.camera_at else [0.0, 0.0]
+
+    shot = {
+        "schema_version": "0.1",
+        "shot_id": f"SURVEY_{args.set_id.upper()}",
+        "status": "blocked",
+        "source": {"format": "manual", "ref": f"survey of set {args.set_id}"},
+        "duration_seconds": float(args.duration),
+        "fps": 12,
+        "set": {"asset_id": args.set_id},
+        "stage": {"size_m": [span_x * 2, span_y * 2], "ground_grid": True},
+        "characters": [
+            {
+                "id": "scale_figure",
+                "asset_id": args.figure,
+                "start_position": list(args.figure_at) if args.figure_at else [0.0, 0.0, 0.0],
+                "start_facing_deg": 90,
+                "actions": [{"type": "idle", "start_t": 0.0, "end_t": float(args.duration)}],
+            }
+        ],
+        "props": [],
+        "camera": {"lens_mm": args.lens, "moves": [_survey_move(args, span_x, span_y, radius, stand)]},
+        "render": {"engine": "WORKBENCH", "resolution": [960, 540], "fps": 12},
+        "notes": "Auto-generated set survey.",
+    }
+
+    output = Path(args.out) if args.out else DEFAULT_RENDER_DIR / f"survey_{args.set_id}.mp4"
+    with tempfile.NamedTemporaryFile("w", suffix=".json", delete=False, encoding="utf-8") as handle:
+        json.dump(shot, handle, indent=2)
+        temp_path = handle.name
+    try:
+        render_args = argparse.Namespace(
+            shot=temp_path, out=str(output), assets=args.assets,
+            blender=args.blender, allow_unblocked=True,
+        )
+        how = {"orbit": f"orbit r={radius:.1f}m", "pan": f"pan from {stand}"}.get(
+            args.mode, f"push down the room from y={-(span_y - 0.4):.1f}")
+        print(f"[previs] survey      {args.set_id}: {how} at h={args.height}m, "
+              f"scale figure at {shot['characters'][0]['start_position']}")
+        return render(render_args)
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
+
+
+def _collect_shot_paths(paths):
+    if not paths:
+        return sorted((PROJECT_ROOT / "shots").rglob("*.json"))
+    collected = []
+    for entry in paths:
+        path = Path(entry)
+        collected.extend(sorted(path.rglob("*.json")) if path.is_dir() else [path])
+    return collected
+
+
+def continuity_cmd(args):
+    """Report or repair continuity breaks between chained shots."""
+    from previs.asset_library import AssetLibrary
+    from previs.continuity import apply_carry, camera_mode, compare, resolve_chain
+
+    library = AssetLibrary(args.assets)
+    chains = [c for c in resolve_chain(_collect_shot_paths(args.paths)) if len(c) > 1]
+    if not chains:
+        print("no multi-shot chains found (nothing has continuity.continues_from set)")
+        return 0
+
+    breaks = 0
+    for chain in chains:
+        names = " -> ".join(shot.get("shot_id", path.stem) for path, shot in chain)
+        print(f"\nchain: {names}")
+
+        for (prev_path, previous), (next_path, successor) in zip(chain, chain[1:]):
+            label = f"  {previous.get('shot_id')} -> {successor.get('shot_id')}"
+            if successor.get("status") != "blocked" or previous.get("status") != "blocked":
+                print(f"{label}: skipped (both shots must be blocked)")
+                continue
+
+            if args.action == "apply":
+                _, changes = apply_carry(successor, previous, library)
+                if changes:
+                    with Path(next_path).open("w", encoding="utf-8") as handle:
+                        json.dump(successor, handle, indent=2, ensure_ascii=False)
+                        handle.write("\n")
+                    print(f"{label}: carried [camera={camera_mode(successor)}]")
+                    for change in changes:
+                        print(f"      {change}")
+                else:
+                    print(f"{label}: nothing to carry")
+                continue
+
+            issues = compare(previous, successor, library)
+            hard = [i for i in issues if i["severity"] == "break"]
+            breaks += len(hard)
+            if not issues:
+                print(f"{label}: ok [camera={camera_mode(successor)}]")
+            else:
+                print(f"{label}: [camera={camera_mode(successor)}]")
+                for issue in issues:
+                    marker = "BREAK" if issue["severity"] == "break" else "note "
+                    print(f"      {marker} {issue['message']}")
+
+    if args.action == "check":
+        print(f"\n{breaks} continuity break(s)")
+        if breaks:
+            print("run 'previs continuity apply' to seed start states from the previous shot")
+    return 1 if (args.action == "check" and breaks) else 0
+
+
+def validate(args):
+    from previs.schema import _main as validate_main
+
+    # Accept directories as well as files, matching the other subcommands.
+    return validate_main(["validate"] + [str(p) for p in _collect_shot_paths(args.paths)])
+
+
+def info(args):
+    try:
+        blender = find_blender(args.blender)
+    except FileNotFoundError as exc:
+        print(f"blender: NOT FOUND ({exc})")
+        return 1
+    print(f"blender:      {blender}")
+    print(f"project root: {PROJECT_ROOT}")
+    print(f"renders:      {DEFAULT_RENDER_DIR}")
+    result = subprocess.run(
+        [str(blender), "--background", "--factory-startup", "--python-expr",
+         "import bpy; print('version:      ' + bpy.app.version_string)"],
+        capture_output=True,
+        text=True,
+    )
+    for line in result.stdout.splitlines():
+        if line.startswith("version:"):
+            print(line)
+    return 0
+
+
+def main(argv=None):
+    parser = argparse.ArgumentParser(prog="previs", description=__doc__.splitlines()[0])
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    render_parser = subparsers.add_parser("render", help="render a shot's control video")
+    render_parser.add_argument("shot")
+    render_parser.add_argument("--out", default=None)
+    render_parser.add_argument("--assets", default=None)
+    render_parser.add_argument("--blender", default=None)
+    render_parser.add_argument(
+        "--allow-unblocked",
+        action="store_true",
+        help="render a needs_blocking stub with placeholder camera/blocking",
+    )
+    render_parser.set_defaults(func=render)
+
+    import_parser = subparsers.add_parser(
+        "import", help="import shot stubs from a story-pipeline file"
+    )
+    import_parser.add_argument(
+        "target", help="a project name from projects.json, or a raw format (fortress/minimax)"
+    )
+    import_parser.add_argument(
+        "name", help="short source name (e.g. a1s1, EP01) or a full path"
+    )
+    import_parser.add_argument("--out", default=None, help="output directory for stubs")
+    import_parser.add_argument("--assets", default=None)
+    import_parser.set_defaults(func=import_source)
+
+    survey_parser = subparsers.add_parser(
+        "survey", help="render a turntable of a set, with a figure in it for scale"
+    )
+    survey_parser.add_argument("set_id")
+    survey_parser.add_argument("--out", default=None)
+    survey_parser.add_argument("--assets", default=None)
+    survey_parser.add_argument("--blender", default=None)
+    survey_parser.add_argument("--duration", type=float, default=10.0)
+    survey_parser.add_argument("--radius", type=float, default=None)
+    survey_parser.add_argument("--height", type=float, default=1.7)
+    survey_parser.add_argument("--lens", type=float, default=28.0)
+    survey_parser.add_argument("--figure", default="generic_human")
+    survey_parser.add_argument(
+        "--mode", choices=("push", "pan", "orbit"), default="push",
+        help="push down the space (default), pan in place, or orbit (clips indoors)",
+    )
+    survey_parser.add_argument(
+        "--camera-at", nargs=2, type=float, default=None, metavar=("X", "Y"),
+        help="where to stand the panning camera (default 0 0)",
+    )
+    survey_parser.add_argument(
+        "--figure-at", nargs=2, type=float, default=None, metavar=("X", "Y"),
+        help="where to stand the scale figure (default 0 0)",
+    )
+    survey_parser.set_defaults(func=survey)
+
+    continuity_parser = subparsers.add_parser(
+        "continuity", help="check or apply cross-shot continuity within a chain"
+    )
+    continuity_parser.add_argument(
+        "action", choices=("check", "apply"), help="report breaks, or seed start states"
+    )
+    continuity_parser.add_argument(
+        "paths", nargs="*", help="shot files or a directory (default: every shot in shots/)"
+    )
+    continuity_parser.add_argument("--assets", default=None)
+    continuity_parser.set_defaults(func=continuity_cmd)
+
+    validate_parser = subparsers.add_parser("validate", help="validate shot JSON files")
+    validate_parser.add_argument("paths", nargs="*")
+    validate_parser.set_defaults(func=validate)
+
+    info_parser = subparsers.add_parser("info", help="show the resolved Blender install")
+    info_parser.add_argument("--blender", default=None)
+    info_parser.set_defaults(func=info)
+
+    args = parser.parse_args(argv)
+    return args.func(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())

@@ -1,0 +1,13 @@
+# Rendered control videos are build artefacts — reproducible from the shot JSON.
+renders/
+prompts/
+assets/
+shots/
+*.mp4
+
+# Blender scratch
+*.blend
+*.blend1
+
+__pycache__/
+*.py[cod]
