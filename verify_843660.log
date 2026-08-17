@@ -1,0 +1,13 @@
+=== bundle (presets + grid + diagram + quality report) ===
+Traceback (most recent call last):
+  File "/weka/home-kateriw/blender_films/previs/driver.py", line 61, in main
+    shot = load_shot(args.shot)
+           ^^^^^^^^^^^^^^^^^^^^
+  File "/weka/home-kateriw/blender_films/previs/schema.py", line 457, in load_shot
+    raise ValueError(f"{path} is not a valid shot spec:\n  - {joined}")
+ValueError: /weka/home-kateriw/blender_films/shots/test/preset01.json is not a valid shot spec:
+  - schema_version must be '0.1', got None
+Blender 4.2.0 (hash a51f293548ad built 2024-07-16 06:27:02)
+error: Blender exited with code 1
+[previs] blender     /weka/home-kateriw/3d/blender-4.2.0-linux-x64/blender
+=== EXIT 1 ===

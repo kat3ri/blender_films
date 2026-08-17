@@ -138,6 +138,8 @@ def bundle(args):
         command += ["--assets", str(Path(args.assets).resolve())]
     if args.generators:
         command += ["--generators", args.generators]
+    if getattr(args, "pano", None):
+        command += ["--pano", args.pano]
     if args.no_depth:
         command.append("--no-depth")
     if args.no_pose:
@@ -739,6 +741,96 @@ def mocap_fetch(args):
     return 0
 
 
+
+def pose_render(args):
+    """Draw a bundle's exact pose data as an OpenPose-style skeleton video."""
+    from .pose_render import render_from_bundle
+
+    out = render_from_bundle(
+        args.bundle, args.out,
+        fps=args.fps, limb_width=args.limb_width, joint_radius=args.joint_radius,
+    )
+    print(f"[previs] wrote pose video -> {out}")
+    return 0
+
+
+
+def import_world(args):
+    """ea_worlds room export -> a previs set asset."""
+    import json as _json
+    from .importers.ea_world import build_set_asset
+
+    asset, report = build_set_asset(
+        args.world, args.set_id,
+        include_shell=not args.no_shell,
+        display_name=args.display_name,
+        pano_yaw_offset_deg=args.pano_yaw,
+        mesh_lod=args.mesh,
+        notes=args.notes,
+    )
+    root = Path(args.assets) if args.assets else (PROJECT_ROOT / "assets")
+    out = root / "sets" / f"{args.set_id}.json"
+    if out.exists() and not args.force:
+        print(f"[previs] {out} exists; pass --force to overwrite")
+        return 1
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(_json.dumps(asset, indent=2) + "\n", encoding="utf-8")
+
+    print(f"[previs] wrote set  {out}")
+    print(f"[previs] meshes     {len(report['placed'])}")
+    if report["boxed_unreliable"]:
+        print(f"[previs] boxed      {len(report['boxed_unreliable'])} unreliable fit(s): "
+              + ", ".join(report["boxed_unreliable"]))
+    if report["boxed_no_mesh"]:
+        print(f"[previs] boxed      {len(report['boxed_no_mesh'])} without a mesh: "
+              + ", ".join(report["boxed_no_mesh"]))
+    print(f"[previs] shell      {report['shell'] or 'omitted'}")
+    print(f"[previs] pano       {asset['pano']}  (yaw offset {asset['pano_yaw_offset_deg']}deg)")
+    print("[previs] next       previs pano-check %s --yaw <deg> to calibrate the offset"
+          % args.set_id)
+    return 0
+
+
+def pano_check(args):
+    """Cut a pano plate at one yaw -- the calibration gate for pano_yaw_offset_deg.
+
+    Compare against a blockout frame shot from the same yaw: if the plate and
+    the render show the same corner of the room, the offset is right. Getting
+    this wrong is the failure that is *confidently* wrong rather than obviously
+    broken, so it is worth doing before anything downstream.
+    """
+    import json as _json
+    import numpy as np
+    from PIL import Image
+    from .pano import fov_from_lens, render_plate
+
+    root = Path(args.assets) if args.assets else (PROJECT_ROOT / "assets")
+    set_path = root / "sets" / f"{args.set_id}.json"
+    if not set_path.is_file():
+        print(f"[previs] no set asset at {set_path}")
+        return 1
+    asset = _json.loads(set_path.read_text(encoding="utf-8"))
+    pano_path = args.pano or asset.get("pano")
+    if not pano_path:
+        print(f"[previs] set {args.set_id!r} has no `pano` -- pass --pano")
+        return 1
+
+    offset = args.offset if args.offset is not None else asset.get("pano_yaw_offset_deg", 0.0)
+    fov_x, _ = fov_from_lens(args.lens, args.width / float(args.height))
+    pano = np.asarray(Image.open(pano_path).convert("RGB"))
+    image = render_plate(pano, args.yaw + offset, args.pitch, fov_x, args.width, args.height)
+
+    out = Path(args.out) if args.out else (PROJECT_ROOT / "renders"
+                                           / f"panocheck_{args.set_id}_yaw{int(args.yaw)}.png")
+    out.parent.mkdir(parents=True, exist_ok=True)
+    Image.fromarray(image).save(out)
+    print(f"[previs] pano       {pano_path}")
+    print(f"[previs] yaw        {args.yaw}deg + offset {offset}deg = {args.yaw + offset}deg")
+    print(f"[previs] wrote      {out}")
+    print("[previs] compare    previs render <shot> --preview 1  with a camera at the same yaw")
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(prog="previs", description=__doc__.splitlines()[0])
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -778,6 +870,9 @@ def main(argv=None):
     bundle_parser.add_argument("--out", default=None, help="output bundle directory")
     bundle_parser.add_argument("--assets", default=None)
     bundle_parser.add_argument("--blender", default=None)
+    bundle_parser.add_argument(
+        "--pano", default=None,
+        help="override the set's panorama for background plates")
     bundle_parser.add_argument(
         "--generators", default=None,
         help="comma-separated target generators (default: generic,seedance,minimax)",
@@ -934,6 +1029,48 @@ def main(argv=None):
         "--cache", default=None, help="override PREVIS_MOCAP_CACHE"
     )
     mocap_fetch_parser.set_defaults(func=mocap_fetch)
+
+    pose_parser = subparsers.add_parser(
+        "pose-render",
+        help="draw a bundle's pose_landmarks.json as an OpenPose-style video",
+    )
+    pose_parser.add_argument("bundle", help="a bundle directory (or any dir with pose_landmarks.json)")
+    pose_parser.add_argument("--out", default=None, help="default: <bundle>/openpose_pose.mp4")
+    pose_parser.add_argument("--fps", type=int, default=None, help="default: the pose file's fps")
+    pose_parser.add_argument("--limb-width", type=int, default=4)
+    pose_parser.add_argument("--joint-radius", type=int, default=3)
+    pose_parser.set_defaults(func=pose_render)
+
+    world_parser = subparsers.add_parser(
+        "import-world", help="import an ea_worlds room export as a previs set")
+    world_parser.add_argument("world", help="ea_worlds world dir (contains export/room.json)")
+    world_parser.add_argument("set_id", help="asset id to write, e.g. wooden_lounge")
+    world_parser.add_argument("--no-shell", action="store_true",
+                              help="omit the room shell -- objects only")
+    world_parser.add_argument("--display-name", default=None)
+    world_parser.add_argument("--pano-yaw", type=float, default=0.0,
+                              help="initial pano_yaw_offset_deg (calibrate with pano-check)")
+    world_parser.add_argument("--mesh", default=None,
+                              help="preferred mesh filename (default: v0_uv40k.glb)")
+    world_parser.add_argument("--notes", default=None)
+    world_parser.add_argument("--assets", default=None)
+    world_parser.add_argument("--force", action="store_true")
+    world_parser.set_defaults(func=import_world)
+
+    panocheck_parser = subparsers.add_parser(
+        "pano-check", help="cut one pano plate at a yaw, to calibrate pano_yaw_offset_deg")
+    panocheck_parser.add_argument("set_id")
+    panocheck_parser.add_argument("--yaw", type=float, required=True)
+    panocheck_parser.add_argument("--pitch", type=float, default=0.0)
+    panocheck_parser.add_argument("--offset", type=float, default=None,
+                                  help="override the set's pano_yaw_offset_deg")
+    panocheck_parser.add_argument("--lens", type=float, default=35.0)
+    panocheck_parser.add_argument("--width", type=int, default=1024)
+    panocheck_parser.add_argument("--height", type=int, default=576)
+    panocheck_parser.add_argument("--pano", default=None)
+    panocheck_parser.add_argument("--assets", default=None)
+    panocheck_parser.add_argument("--out", default=None)
+    panocheck_parser.set_defaults(func=pano_check)
 
     args = parser.parse_args(argv)
     return args.func(args)

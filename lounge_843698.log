@@ -1,0 +1,401 @@
+01:35:06 | INFO: Data are loaded, start creating Blender stuff
+01:35:06 | INFO: Blender create Mesh node geometry_0
+01:35:06 | INFO: glTF import finished in 0.04s
+01:35:08 | INFO: Data are loaded, start creating Blender stuff
+01:35:08 | INFO: Blender create Mesh node geometry_0
+01:35:08 | INFO: glTF import finished in 0.02s
+01:35:08 | INFO: Data are loaded, start creating Blender stuff
+01:35:08 | INFO: Blender create Mesh node geometry_0
+01:35:08 | INFO: glTF import finished in 0.02s
+01:35:08 | INFO: Data are loaded, start creating Blender stuff
+01:35:08 | INFO: Blender create Mesh node geometry_0
+01:35:08 | INFO: glTF import finished in 0.02s
+01:35:08 | INFO: Data are loaded, start creating Blender stuff
+01:35:08 | INFO: Blender create Mesh node geometry_0
+01:35:08 | INFO: glTF import finished in 0.02s
+01:35:09 | INFO: Data are loaded, start creating Blender stuff
+01:35:09 | INFO: Blender create Mesh node geometry_0
+01:35:09 | INFO: glTF import finished in 0.07s
+01:35:09 | INFO: Data are loaded, start creating Blender stuff
+01:35:09 | INFO: Blender create Mesh node geometry_0
+01:35:09 | INFO: glTF import finished in 0.08s
+01:35:09 | INFO: Data are loaded, start creating Blender stuff
+01:35:09 | INFO: Blender create Mesh node geometry_0
+01:35:09 | INFO: glTF import finished in 0.15s
+01:35:09 | INFO: Data are loaded, start creating Blender stuff
+01:35:09 | INFO: Blender create Mesh node geometry_0
+01:35:09 | INFO: glTF import finished in 0.33s
+01:35:09 | INFO: Data are loaded, start creating Blender stuff
+01:35:09 | INFO: Blender create Mesh node geometry_0
+01:35:09 | INFO: glTF import finished in 0.02s
+01:35:09 | INFO: Data are loaded, start creating Blender stuff
+01:35:09 | INFO: Blender create Mesh node geometry_0
+01:35:09 | INFO: glTF import finished in 0.02s
+01:35:10 | INFO: Data are loaded, start creating Blender stuff
+01:35:10 | INFO: Blender create Mesh node geometry_0
+01:35:10 | INFO: glTF import finished in 0.02s
+01:35:10 | INFO: Data are loaded, start creating Blender stuff
+01:35:10 | INFO: Blender create Mesh node geometry_0
+01:35:10 | INFO: glTF import finished in 0.02s
+01:35:10 | INFO: Data are loaded, start creating Blender stuff
+01:35:10 | INFO: Blender create Mesh node geometry_0
+01:35:10 | INFO: glTF import finished in 0.02s
+01:35:10 | INFO: Data are loaded, start creating Blender stuff
+01:35:10 | INFO: Blender create Mesh node geometry_0
+01:35:10 | INFO: glTF import finished in 0.02s
+01:35:10 | INFO: Data are loaded, start creating Blender stuff
+01:35:10 | INFO: Blender create Mesh node geometry_0
+01:35:10 | INFO: glTF import finished in 0.02s
+01:35:10 | INFO: Data are loaded, start creating Blender stuff
+01:35:10 | INFO: Blender create Mesh node geometry_0
+01:35:10 | INFO: glTF import finished in 0.02s
+01:35:11 | INFO: Data are loaded, start creating Blender stuff
+01:35:11 | INFO: Blender create Mesh node geometry_0
+01:35:11 | INFO: glTF import finished in 0.35s
+libEGL warning: failed to open /dev/dri/renderD135: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD134: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD133: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD132: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD131: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD130: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD129: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD128: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD135: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD134: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD133: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD132: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD131: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD130: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD129: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD128: Permission denied
+
+libEGL warning: failed to open /dev/dri/card8: Permission denied
+
+libEGL warning: failed to open /dev/dri/card7: Permission denied
+
+libEGL warning: failed to open /dev/dri/card6: Permission denied
+
+libEGL warning: failed to open /dev/dri/card5: Permission denied
+
+libEGL warning: failed to open /dev/dri/card4: Permission denied
+
+libEGL warning: failed to open /dev/dri/card3: Permission denied
+
+libEGL warning: failed to open /dev/dri/card2: Permission denied
+
+libEGL warning: failed to open /dev/dri/card1: Permission denied
+
+EGL Error (0x3009): EGL_BAD_MATCH: Arguments are inconsistent (for example, a valid context requires buffers not supplied by a valid surface).
+Blender 4.2.0 (hash a51f293548ad built 2024-07-16 06:27:02)
+Append frame 1
+Time: 00:01.44 (Saving: 00:00.12)
+
+Append frame 2
+Time: 00:00.62 (Saving: 00:00.02)
+
+Append frame 3
+Time: 00:00.58 (Saving: 00:00.02)
+
+Append frame 4
+Time: 00:00.62 (Saving: 00:00.02)
+
+Append frame 5
+Time: 00:00.59 (Saving: 00:00.02)
+
+Append frame 6
+Time: 00:00.61 (Saving: 00:00.02)
+
+Append frame 7
+Time: 00:00.62 (Saving: 00:00.02)
+
+Append frame 8
+Time: 00:00.61 (Saving: 00:00.02)
+
+Append frame 9
+Time: 00:00.59 (Saving: 00:00.02)
+
+Append frame 10
+Time: 00:00.74 (Saving: 00:00.11)
+
+Append frame 11
+Time: 00:00.83 (Saving: 00:00.03)
+
+Append frame 12
+Time: 00:00.72 (Saving: 00:00.05)
+
+Append frame 13
+Time: 00:00.84 (Saving: 00:00.02)
+
+Append frame 14
+Time: 00:00.82 (Saving: 00:00.02)
+
+Append frame 15
+Time: 00:00.97 (Saving: 00:00.04)
+
+Append frame 16
+Time: 00:00.83 (Saving: 00:00.02)
+
+Append frame 17
+Time: 00:00.95 (Saving: 00:00.08)
+
+Append frame 18
+Time: 00:00.92 (Saving: 00:00.04)
+
+Append frame 19
+Time: 00:00.88 (Saving: 00:00.05)
+
+Append frame 20
+Time: 00:01.07 (Saving: 00:00.14)
+
+Append frame 21
+Time: 00:01.19 (Saving: 00:00.16)
+
+Append frame 22
+Time: 00:01.19 (Saving: 00:00.19)
+
+Append frame 23
+Time: 00:01.09 (Saving: 00:00.15)
+
+Append frame 24
+Time: 00:01.17 (Saving: 00:00.19)
+
+Append frame 25
+Time: 00:00.97 (Saving: 00:00.02)
+
+Append frame 26
+Time: 00:01.08 (Saving: 00:00.09)
+
+Append frame 27
+Time: 00:01.10 (Saving: 00:00.03)
+
+Append frame 28
+Time: 00:00.82 (Saving: 00:00.02)
+
+Append frame 29
+Time: 00:00.79 (Saving: 00:00.03)
+
+Append frame 30
+Time: 00:01.17 (Saving: 00:00.02)
+
+Append frame 31
+Time: 00:01.05 (Saving: 00:00.02)
+
+Append frame 32
+Time: 00:00.76 (Saving: 00:00.03)
+
+Append frame 33
+Time: 00:00.74 (Saving: 00:00.07)
+
+Append frame 34
+Time: 00:02.62 (Saving: 00:00.02)
+
+Append frame 35
+Time: 00:01.41 (Saving: 00:00.02)
+
+Append frame 36
+Time: 00:01.37 (Saving: 00:00.02)
+
+Append frame 37
+Time: 00:01.02 (Saving: 00:00.02)
+
+Append frame 38
+Time: 00:02.19 (Saving: 00:00.02)
+
+Append frame 39
+Time: 00:01.30 (Saving: 00:00.28)
+
+Append frame 40
+Time: 00:01.05 (Saving: 00:00.02)
+
+Append frame 41
+Time: 00:02.40 (Saving: 00:00.02)
+
+Append frame 42
+Time: 00:01.10 (Saving: 00:00.02)
+
+Append frame 43
+Time: 00:02.40 (Saving: 00:00.02)
+
+Append frame 44
+Time: 00:01.07 (Saving: 00:00.02)
+
+Append frame 45
+Time: 00:01.52 (Saving: 00:00.07)
+
+Append frame 46
+Time: 00:01.48 (Saving: 00:00.14)
+
+Append frame 47
+Time: 00:01.40 (Saving: 00:00.07)
+
+Append frame 48
+Time: 00:01.46 (Saving: 00:00.10)
+
+Append frame 49
+Time: 00:01.43 (Saving: 00:00.07)
+
+Append frame 50
+Time: 00:01.90 (Saving: 00:00.11)
+
+Append frame 51
+Time: 00:01.90 (Saving: 00:00.07)
+
+Append frame 52
+Time: 00:02.20 (Saving: 00:00.08)
+
+Append frame 53
+Time: 00:01.76 (Saving: 00:00.02)
+
+Append frame 54
+Time: 00:01.72 (Saving: 00:00.13)
+
+Append frame 55
+Time: 00:01.59 (Saving: 00:00.04)
+
+Append frame 56
+Time: 00:01.50 (Saving: 00:00.02)
+
+Append frame 57
+Time: 00:01.46 (Saving: 00:00.02)
+
+Append frame 58
+Time: 00:01.99 (Saving: 00:00.55)
+
+Append frame 59
+Time: 00:02.10 (Saving: 00:00.14)
+
+Append frame 60
+Time: 00:01.95 (Saving: 00:00.10)
+
+Append frame 61
+Time: 00:01.81 (Saving: 00:00.15)
+
+Append frame 62
+Time: 00:01.75 (Saving: 00:00.02)
+
+Append frame 63
+Time: 00:01.56 (Saving: 00:00.02)
+
+Append frame 64
+Time: 00:01.49 (Saving: 00:00.02)
+
+Append frame 65
+Time: 00:02.37 (Saving: 00:00.03)
+
+Append frame 66
+Time: 00:03.48 (Saving: 00:00.02)
+
+Append frame 67
+Time: 00:01.45 (Saving: 00:00.02)
+
+Append frame 68
+Time: 00:02.92 (Saving: 00:00.02)
+
+Append frame 69
+Time: 00:01.47 (Saving: 00:00.02)
+
+Append frame 70
+Time: 00:01.86 (Saving: 00:00.39)
+
+Append frame 71
+Time: 00:02.45 (Saving: 00:00.15)
+
+Append frame 72
+Time: 00:02.89 (Saving: 00:00.14)
+
+Append frame 73
+Time: 00:02.96 (Saving: 00:00.15)
+
+Append frame 74
+Time: 00:03.25 (Saving: 00:00.22)
+
+Append frame 75
+Time: 00:02.09 (Saving: 00:00.02)
+
+Append frame 76
+Time: 00:05.30 (Saving: 00:00.02)
+
+Append frame 77
+Time: 00:01.66 (Saving: 00:00.02)
+
+Append frame 78
+Time: 00:07.52 (Saving: 00:00.12)
+
+Append frame 79
+Time: 00:02.51 (Saving: 00:00.02)
+
+Append frame 80
+Time: 00:02.43 (Saving: 00:00.02)
+
+Append frame 81
+Time: 00:03.02 (Saving: 00:00.42)
+
+Append frame 82
+Time: 00:02.76 (Saving: 00:00.02)
+
+Append frame 83
+Time: 00:04.53 (Saving: 00:00.02)
+
+Append frame 84
+Time: 00:03.95 (Saving: 00:00.03)
+
+Append frame 85
+Time: 00:03.36 (Saving: 00:00.02)
+
+Append frame 86
+Time: 00:04.38 (Saving: 00:00.02)
+
+Append frame 87
+Time: 00:03.88 (Saving: 00:00.02)
+
+Append frame 88
+Time: 00:02.23 (Saving: 00:00.02)
+
+Append frame 89
+Time: 00:02.25 (Saving: 00:00.02)
+
+Append frame 90
+Time: 00:01.64 (Saving: 00:00.02)
+
+Append frame 91
+Time: 00:04.64 (Saving: 00:00.02)
+
+Append frame 92
+Time: 00:01.88 (Saving: 00:00.28)
+
+Append frame 93
+Time: 00:02.05 (Saving: 00:00.10)
+
+Append frame 94
+Time: 00:02.17 (Saving: 00:00.14)
+
+Append frame 95
+Time: 00:02.18 (Saving: 00:00.02)
+
+Append frame 96
+Time: 00:02.27 (Saving: 00:00.03)
+
+Append frame 97
+Time: 00:02.47 (Saving: 00:00.02)
+
+Append frame 98
+Time: 00:01.62 (Saving: 00:00.02)
+
+Append frame 99
+Time: 00:02.64 (Saving: 00:00.03)
+

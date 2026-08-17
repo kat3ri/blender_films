@@ -185,7 +185,8 @@ def _estimate_depth_range(shot, ctx):
 
 
 def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
-                   generators=None, with_depth=True, with_pose=True, with_stills=True):
+                   generators=None, with_depth=True, with_pose=True, with_stills=True,
+                   pano_override=None):
     """Export a full control-layer bundle for a downstream AI video generator.
 
     Renders the reference video and (optionally) a depth pass, captures exact
@@ -214,6 +215,41 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
     entries.update(written)
     if verbose:
         print(f"[previs] bundle      wrote {len(written)} sidecar file(s)")
+
+    # Background plates cut from the set's panorama, driven by where this
+    # shot's camera actually looks. Host-side maths on the camera track we
+    # just wrote -- no Blender, no extra render.
+    set_asset = ctx["library"].get("sets", (shot.get("set") or {}).get("asset_id", ""))
+    pano_path = pano_override or (set_asset or {}).get("pano")
+    if pano_path and Path(pano_path).is_file():
+        try:
+            from . import pano as pano_mod
+            camera_motion = bundle_mod.build_camera_motion(shot, ctx["camera_keys"], fps)
+            timeline = pano_mod.plates_for_shot(
+                pano_path, camera_motion, out_dir / "plates",
+                yaw_offset_deg=float((set_asset or {}).get("pano_yaw_offset_deg", 0.0)),
+            )
+            bundle_mod._dump(out_dir / "plates.json", timeline)
+            entries["plates"] = "plates/"
+            entries["plates_timeline"] = "plates.json"
+            metadata["plates"] = timeline
+            bundle_mod._dump(out_dir / "metadata.json", metadata)
+            # Re-emit the prompts now the plate timeline exists, so the
+            # [BACKGROUND] block and its <Picture N> numbering are present.
+            shot["_plates"] = timeline
+            rewritten, _ = bundle_mod.write_sidecars(
+                out_dir, shot, ctx["tracks"], ctx["camera_keys"], ctx["library"],
+                fps, generators=generators, render_settings=ctx["render_settings"])
+            entries.update(rewritten)
+            if verbose:
+                spans = ", ".join(f"{p['t_start']:.2f}-{p['t_end']:.2f}s @{p['yaw_deg']:.0f}deg"
+                                  for p in timeline["plates"])
+                print(f"[previs] bundle      {len(timeline['plates'])} pano plate(s): {spans}")
+        except Exception as exc:  # a missing pano must never fail the bundle
+            if verbose:
+                print(f"[previs] WARNING     pano plates failed: {exc}")
+    elif pano_path and verbose:
+        print(f"[previs] WARNING     set pano not found: {pano_path}")
 
     # Reference control video.
     reference = out_dir / f"{shot_id}_reference.mp4"
@@ -259,22 +295,6 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
             if verbose:
                 print(f"[previs] bundle      {len(stills)} still(s) -> stills/")
 
-        # Top-down staging diagram: camera path (green->red) plus every
-        # character's trail (blue->magenta), from outside the shot. The bundle
-        # README has promised this since the format was defined; it is built
-        # from a fresh scene because draw_* geometry would otherwise pollute
-        # the reference render.
-        try:
-            diagram = out_dir / "stills" / "blocking_diagram.png"
-            compile_camera_path(json.loads(json.dumps(shot)), diagram,
-                                assets_root=assets_root, verbose=False,
-                                mode="top", with_tracks=True)
-            entries["blocking_diagram"] = "stills/blocking_diagram.png"
-            if verbose:
-                print(f"[previs] bundle      blocking_diagram -> stills/")
-        except Exception as exc:  # diagnostic art; never fail the bundle on it
-            if verbose:
-                print(f"[previs] WARNING     blocking diagram failed: {exc}")
 
     # Depth pass last: it swaps the engine and compositor, so run it after
     # everything that depends on the reference render setup.
@@ -290,6 +310,24 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
         except Exception as exc:  # depth is optional; never fail the bundle on it
             if verbose:
                 print(f"[previs] WARNING     depth pass failed: {exc}")
+
+    # Top-down staging diagram LAST: it builds a fresh scene (draw_* geometry
+    # would otherwise pollute the reference render), which invalidates the
+    # scene every render step above still needs. Verified the hard way --
+    # running it before the depth pass killed depth with
+    # "StructRNA of type Scene has been removed".
+    if with_stills:
+        try:
+            diagram = out_dir / "stills" / "blocking_diagram.png"
+            compile_camera_path(json.loads(json.dumps(shot)), diagram,
+                                assets_root=assets_root, verbose=False,
+                                mode="top", with_tracks=True)
+            entries["blocking_diagram"] = "stills/blocking_diagram.png"
+            if verbose:
+                print(f"[previs] bundle      blocking_diagram -> stills/")
+        except Exception as exc:  # diagnostic art; never fail the bundle on it
+            if verbose:
+                print(f"[previs] WARNING     blocking diagram failed: {exc}")
 
     bundle_mod.write_readme(out_dir, shot, entries)
     entries["readme"] = "README.txt"

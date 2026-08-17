@@ -1,0 +1,448 @@
+=== bundle (presets + grid + diagram + quality report) ===
+libEGL warning: failed to open /dev/dri/renderD135: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD134: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD133: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD132: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD131: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD130: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD129: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD128: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD135: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD134: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD133: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD132: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD131: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD130: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD129: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD128: Permission denied
+
+libEGL warning: failed to open /dev/dri/card8: Permission denied
+
+libEGL warning: failed to open /dev/dri/card7: Permission denied
+
+libEGL warning: failed to open /dev/dri/card6: Permission denied
+
+libEGL warning: failed to open /dev/dri/card5: Permission denied
+
+libEGL warning: failed to open /dev/dri/card4: Permission denied
+
+libEGL warning: failed to open /dev/dri/card3: Permission denied
+
+libEGL warning: failed to open /dev/dri/card2: Permission denied
+
+libEGL warning: failed to open /dev/dri/card1: Permission denied
+
+EGL Error (0x3009): EGL_BAD_MATCH: Arguments are inconsistent (for example, a valid context requires buffers not supplied by a valid surface).
+Blender 4.2.0 (hash a51f293548ad built 2024-07-16 06:27:02)
+Append frame 1
+Time: 00:01.54 (Saving: 00:00.10)
+
+Append frame 2
+Time: 00:00.27 (Saving: 00:00.02)
+
+Append frame 3
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 4
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 5
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 6
+Time: 00:00.26 (Saving: 00:00.06)
+
+Append frame 7
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 8
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 9
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 10
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 11
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 12
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 13
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 14
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 15
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 16
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 17
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 18
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 19
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 20
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 21
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 22
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 23
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 24
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 25
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 26
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 27
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 28
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 29
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 30
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 31
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 32
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 33
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 34
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 35
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 36
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 37
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 38
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 39
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 40
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 41
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 42
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 43
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 44
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 45
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 46
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 47
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 48
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 49
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 50
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 51
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 52
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 53
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 54
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 55
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 56
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 57
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 58
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 59
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 60
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 61
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 62
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 63
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 64
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 65
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 66
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 67
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 68
+Time: 00:00.22 (Saving: 00:00.02)
+
+Append frame 69
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 70
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 71
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 72
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 73
+Time: 00:00.23 (Saving: 00:00.02)
+
+Append frame 74
+Time: 00:00.23 (Saving: 00:00.02)
+
+Append frame 75
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 76
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 77
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 78
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 79
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 80
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 81
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 82
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 83
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 84
+Time: 00:00.28 (Saving: 00:00.04)
+
+Append frame 85
+Time: 00:00.25 (Saving: 00:00.02)
+
+Append frame 86
+Time: 00:00.35 (Saving: 00:00.02)
+
+Append frame 87
+Time: 00:00.24 (Saving: 00:00.03)
+
+Append frame 88
+Time: 00:00.56 (Saving: 00:00.08)
+
+Append frame 89
+Time: 00:00.41 (Saving: 00:00.09)
+
+Append frame 90
+Time: 00:00.44 (Saving: 00:00.14)
+
+Append frame 91
+Time: 00:00.63 (Saving: 00:00.12)
+
+Append frame 92
+Time: 00:00.22 (Saving: 00:00.02)
+
+Append frame 93
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 94
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 95
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 96
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 97
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 98
+Time: 00:00.27 (Saving: 00:00.07)
+
+Append frame 99
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 100
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 101
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 102
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 103
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 104
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 105
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 106
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 107
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 108
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 109
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 110
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 111
+Time: 00:00.22 (Saving: 00:00.02)
+
+Append frame 112
+Time: 00:00.22 (Saving: 00:00.02)
+
+Append frame 113
+Time: 00:00.22 (Saving: 00:00.02)
+
+Append frame 114
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 115
+Time: 00:00.21 (Saving: 00:00.02)
+
+Append frame 116
+Time: 00:00.24 (Saving: 00:00.02)
+
+Append frame 117
+Time: 00:00.22 (Saving: 00:00.03)
+
+Append frame 118
+Time: 00:00.34 (Saving: 00:00.11)
+
+Append frame 119
+Time: 00:00.40 (Saving: 00:00.04)
+
+Append frame 120
+Time: 00:00.59 (Saving: 00:00.14)
+
+Append frame 121
+Time: 00:00.46 (Saving: 00:00.05)
+
+Append frame 122
+Time: 00:00.50 (Saving: 00:00.07)
+
+Append frame 123
+Time: 00:00.27 (Saving: 00:00.02)
+
+Append frame 124
+Time: 00:00.43 (Saving: 00:00.13)
+
+Saved: '/weka/home-kateriw/blender_films/renders/bundles/TEST_PRESET01/stills/TEST_PRESET01_0001.png'
+Time: 00:00.56 (Saving: 00:00.22)
+
+Saved: '/weka/home-kateriw/blender_films/renders/bundles/TEST_PRESET01/stills/TEST_PRESET01_0124.png'
+Time: 00:00.27 (Saving: 00:00.07)
+
+Saved: '/weka/home-kateriw/blender_films/renders/bundles/TEST_PRESET01/stills/blocking_diagram.png'
+Time: 00:00.47 (Saving: 00:00.09)
+
+[previs] shot        TEST_PRESET01
+[previs] duration    5.166666666666667s @ 24fps (1-124)
+[previs] characters  ['mauryl', 'foil']
+[previs] props       []
+[previs] camera      ['ots']  (1 preset(s) expanded)
+[previs] bundle      wrote 5 sidecar file(s)
+[previs] bundle      reference -> TEST_PRESET01_reference.mp4
+[previs] bundle      2 still(s) -> stills/
+[previs] bundle      blocking_diagram -> stills/
+[previs] WARNING     depth pass failed: StructRNA of type Scene has been removed
+[previs] bundle      manifest -> bundle_manifest.json (9 entries)
+
+Blender quit
+[previs] blender     /weka/home-kateriw/3d/blender-4.2.0-linux-x64/blender
+[previs] bundle: /weka/home-kateriw/blender_films/renders/bundles/TEST_PRESET01
+=== EXIT 0 ===

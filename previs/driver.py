@@ -50,6 +50,7 @@ def parse_args(argv):
         help="comma-separated target generators for prompts (bundle mode)",
     )
     parser.add_argument("--no-depth", action="store_true", help="skip the depth pass (bundle mode)")
+    parser.add_argument("--pano", default=None, help="panorama for background plates (bundle mode)")
     parser.add_argument("--no-pose", action="store_true", help="skip pose capture (bundle mode)")
     parser.add_argument("--no-stills", action="store_true", help="skip stills (bundle mode)")
     return parser.parse_args(args)
@@ -67,6 +68,7 @@ def main():
             compile_bundle(
                 shot, args.out, assets_root=args.assets, verbose=not args.quiet,
                 generators=generators, with_depth=not args.no_depth,
+                pano_override=args.pano,
                 with_pose=not args.no_pose, with_stills=not args.no_stills,
             )
             return

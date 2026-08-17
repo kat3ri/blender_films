@@ -564,6 +564,30 @@ def build_prompt_fragments(shot, tracks, library, camera_keys, generator="minima
             dolly_dir = "pushes in" if math.dist(end, aim) < math.dist(start, aim) else "pulls back"
         camera_bits.append(template.format(size=size, dolly_dir=dolly_dir))
 
+    # Background plates: which pano region is on screen, and when it hands over.
+    # Numbered AFTER the cast so <Picture N> stays stable for identity refs.
+    background_lines = []
+    plate_subjects = []
+    plates = (shot.get("_plates") or {}).get("plates") or []
+    first_plate_n = len([c for c in shot.get("characters", []) if isinstance(c, dict)]) + 1
+    for offset, plate in enumerate(plates):
+        token = picture_tmpl.format(n=first_plate_n + offset)
+        plate_subjects.append(
+            f"{token} controls the background only: the part of the room the "
+            f"camera faces from {plate['t_start']:g}s to {plate['t_end']:g}s."
+        )
+        if offset == 0:
+            background_lines.append(
+                f"{token} is the background from {plate['t_start']:g}s to "
+                f"{plate['t_end']:g}s.")
+        else:
+            background_lines.append(
+                f"At {plate['t_start']:g}s the camera turns and {token} becomes "
+                f"the background, through {plate['t_end']:g}s. Keep the room "
+                f"continuous across that handover -- it is the same room, seen "
+                f"further round.")
+    subjects.extend(plate_subjects)
+
     shot_data = {
         "duration_s": duration,
         "lens_mm": camera.get("lens_mm", 35),
@@ -578,6 +602,7 @@ def build_prompt_fragments(shot, tracks, library, camera_keys, generator="minima
         "generator": generator,
         "subjects_block": subjects,
         "retain_lines": retain_lines,
+        "background_lines": background_lines,
         "replace_lines": replace_lines,
         "scene_translation": scene_translation,
         "camera_prose": "; then ".join(camera_bits) if camera_bits else f"A {size} shot",
@@ -596,6 +621,10 @@ def _build_retention_prompt(fragments):
     lines.append("[RETENTION]")
     lines.extend(f["retain_lines"])
     lines.extend(f["replace_lines"])
+    if f.get("background_lines"):
+        lines.append("")
+        lines.append("[BACKGROUND]")
+        lines.extend(f["background_lines"])
     lines.append("")
     lines.append("[SCENE]")
     lines.append(f["camera_prose"] + ".")
@@ -794,7 +823,7 @@ def write_manifest(out_dir, shot, entries, fps, extra=None):
         "version": BUNDLE_FORMAT_VERSION,
         # The orchestrator-facing contract (docs/BUNDLE_CONTRACT.md): bump on
         # any breaking change to file roles or the fields promised here.
-        "contract_version": "1.0",
+        "contract_version": "1.1",
         "shot_id": shot.get("shot_id"),
         "fps": int(fps),
         "duration_s": float(shot["duration_seconds"]),

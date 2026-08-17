@@ -15,7 +15,7 @@ or the fields promised below (additive changes do not bump it).
 {
   "format": "previs.bundle_manifest",
   "version": "1.0",              // bundle format
-  "contract_version": "1.0",     // THIS document
+  "contract_version": "1.1",     // THIS document
   "shot_id": "A1S1_SEG03",
   "fps": 12,                     // as rendered (targets may resample)
   "duration_s": 5.167,
@@ -42,6 +42,8 @@ The manifest is written LAST — if it exists, the bundle is complete.
 | `stills` | `stills/` | frame at each camera-move boundary + first/last |
 | `blocking_diagram` | `stills/blocking_diagram.png` | top-down staging: camera path (green→red) + character trails (blue→magenta) |
 | `quality_report` | `quality_report.json` | pre-flight visibility analysis; see below |
+| `plates` | `plates/` | background plates cut from the set's panorama at what the camera actually looks at |
+| `plates_timeline` | `plates.json` | which plate is on screen when; see below |
 | `readme` | `README.txt` | human index |
 
 ## prompt_fragments.<generator>.json
@@ -100,6 +102,30 @@ identity references to survive.
 
 Thresholds warn at <90% in-frame and <15% screen height. It warns, it never
 gates — a deliberate out-of-frame exit is a legitimate choice.
+
+## plates.json  (contract 1.1)
+
+Background plates, cut from the set's equirectangular panorama by reprojecting
+the frustum the camera actually traverses. Because previs authored the camera,
+this is a deterministic reprojection, not an estimate.
+
+| field | meaning |
+|---|---|
+| `pano` | source equirect |
+| `pano_yaw_offset_deg` | calibration between the set's world yaw and the pano's 0 (see `previs pano-check`) |
+| `fov_x_deg` / `plate_margin` | taking FOV, and how much wider each plate is cut |
+| `plates[].file` | image under `plates/` |
+| `plates[].yaw_deg` / `pitch_deg` | plate centre direction |
+| `plates[].t_start` / `t_end` | when this plate is the background |
+| `plates[].frame_start` / `frame_end` | the frames it covers; consecutive plates are contiguous |
+
+A locked-off shot yields one plate; a pan yields two or three. Capped at 3,
+because MiniMax H3 has nine image slots shared with the cast.
+
+The matching prompt fragment is `background_lines[]`, which numbers the plates
+`<Picture N>` **after** the cast so identity references keep stable numbers, and
+names the handover moment ("At 2.54s the camera turns and <Picture 3> becomes
+the background").
 
 ## Worked example
 
