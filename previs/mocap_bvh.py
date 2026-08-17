@@ -265,14 +265,18 @@ def _axis_matrix(axis, angle):
 
 
 def _matrix_to_euler_xyz_deg(m):
-    # XYZ decomposition for matrix built in right-handed coordinates.
-    if abs(m[0][2]) < 0.999999:
-        y = math.asin(m[0][2])
-        x = math.atan2(-m[1][2], m[2][2])
-        z = math.atan2(-m[0][1], m[0][0])
+    # Decompose as M = Rz . Ry . Rx — Blender's 'XYZ' Euler convention
+    # (rotations applied X, then Y, then Z about fixed axes). These angles are
+    # ultimately assigned to rotation_euler, so the decomposition here MUST
+    # match how Blender recomposes them; an Rx.Ry.Rz decomposition agrees only
+    # for single-axis rotations and scrambles real multi-axis mocap frames.
+    if abs(m[2][0]) < 0.999999:
+        y = -math.asin(m[2][0])
+        x = math.atan2(m[2][1], m[2][2])
+        z = math.atan2(m[1][0], m[0][0])
     else:
         # Gimbal lock fallback.
-        y = math.pi / 2.0 if m[0][2] >= 0 else -math.pi / 2.0
-        x = math.atan2(m[2][1], m[1][1])
+        y = -math.pi / 2.0 if m[2][0] >= 0 else math.pi / 2.0
+        x = math.atan2(-m[1][2], m[1][1])
         z = 0.0
     return [math.degrees(x), math.degrees(y), math.degrees(z)]

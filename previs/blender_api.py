@@ -688,7 +688,8 @@ def _mocap_overlay(angles, track, t, runtime_state):
 
     clip_t = mocap.clip_time_for_segment(segment, t, clip.duration_seconds)
     source_rot = clip.sample_joint_rotations(clip_t)
-    mapped = mocap.map_rotations(
+    mapped = mocap.retarget_frame(
+        clip,
         source_rot,
         mocap.canonical_joint_map(segment.get("joint_map")),
         source_up_axis=segment.get("source_up_axis", "y"),
