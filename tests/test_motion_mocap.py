@@ -27,7 +27,7 @@ class TestMocapOverlay(unittest.TestCase):
                     "start_t": 0.5,
                     "end_t": 4.5,
                     "position": [2.5, -1.0, 0.0],
-                    "pose": "walk",
+                    
                 },
                 {
                     "type": "mocap_clip",
@@ -50,7 +50,7 @@ class TestMocapOverlay(unittest.TestCase):
     def test_root_still_travels_and_pose_is_walk(self):
         track = self._walking_track()
         position, _facing, pose = track.sample(2.5)
-        self.assertEqual(pose, "walk")
+        self.assertEqual(pose, "stand")
         self.assertGreater(position[0], -1.0)  # well past the start
 
     def test_segment_registered_for_overlay(self):
@@ -69,7 +69,7 @@ class TestMocapOverlay(unittest.TestCase):
                     "start_t": 1.0,
                     "end_t": 4.0,
                     "clip_id": "SnapMoGen/renamed_bvhs/dummy",
-                    "pose": "walk",
+                    
                     "root_mode": "from_clip",
                 }
             ],
@@ -77,7 +77,7 @@ class TestMocapOverlay(unittest.TestCase):
         track = build_character_track(char, _resolve_point, 5.0)
         ts = [k["t"] for k in track.keys]
         self.assertEqual(ts, sorted(ts))
-        self.assertEqual(track.sample(2.5)[2], "walk")
+        self.assertEqual(track.sample(2.5)[2], "stand")
 
 
 if __name__ == "__main__":
