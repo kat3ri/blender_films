@@ -786,7 +786,7 @@ def animate_camera(camera, keys):
 # ---------------------------------------------------------------------------
 
 
-def configure_render(scene, engine="WORKBENCH", resolution=(960, 540), fps=12):
+def configure_render(scene, engine="WORKBENCH", resolution=(960, 544), fps=12):
     """Cheap, high-legibility settings — silhouettes over beauty."""
     scene.render.engine = "BLENDER_WORKBENCH" if engine == "WORKBENCH" else "BLENDER_EEVEE_NEXT"
     scene.render.resolution_x = int(resolution[0])

@@ -384,7 +384,7 @@ def survey(args):
         ],
         "props": [],
         "camera": {"lens_mm": args.lens, "moves": [_survey_move(args, span_x, span_y, radius, stand)]},
-        "render": {"engine": "WORKBENCH", "resolution": [960, 540], "fps": 12},
+        "render": {"engine": "WORKBENCH", "resolution": [960, 544], "fps": 12},
         "notes": "Auto-generated set survey.",
     }
 

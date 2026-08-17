@@ -86,9 +86,9 @@ class Track:
     def __init__(self, object_id, keys, mocap_segments=None):
         self.object_id = object_id
         self.keys = keys  # each: {"t", "position", "facing_deg", "pose"}
-        # Optional metadata used by rig animation backends that can consume
-        # mocap clips. Phase 1 records the intent here without changing the
-        # existing procedural motion output.
+        # Mocap directives for rig backends that can consume them. The
+        # procedural track stays authoritative for position/facing; root
+        # motion from the clip is applied downstream (blender_api._apply_root_mode).
         self.mocap_segments = list(mocap_segments or [])
         # Cumulative ground distance at each key. The gait cycle is a function
         # of distance rather than time, so stride always matches ground covered
@@ -268,7 +268,8 @@ def build_character_track(character, resolve_point, duration):
             facing, pose = new_facing, next_pose
 
         elif action_type == "mocap_clip":
-            # Phase 1: store clip directives while preserving current root motion.
+            # Store the clip directive; root handling is chosen per-segment
+            # by root_mode (lock_xy / from_clip / blend) at apply time.
             mocap_segments.append(
                 {
                     "start_t": start_t,

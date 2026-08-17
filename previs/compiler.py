@@ -74,7 +74,7 @@ def _assemble_scene(shot, assets_root=None, verbose=True):
     api.configure_render(
         scene,
         engine=render_settings.get("engine", "WORKBENCH"),
-        resolution=render_settings.get("resolution", [960, 540]),
+        resolution=render_settings.get("resolution", [960, 544]),
         fps=fps,
     )
 
@@ -257,7 +257,8 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
     entries["readme"] = "README.txt"
     manifest = bundle_mod.write_manifest(
         out_dir, shot, entries, fps,
-        extra={"generators": list(generators), "warnings": ctx["warnings"]},
+        extra={"generators": list(generators), "warnings": ctx["warnings"],
+               "target_constraints": metadata.get("target_constraints", {})},
     )
     if verbose:
         print(f"[previs] bundle      manifest -> bundle_manifest.json "
@@ -331,7 +332,7 @@ def compile_camera_path(shot, output_path, assets_root=None, verbose=True, mode=
     api.configure_render(
         scene,
         engine="WORKBENCH",
-        resolution=render_settings.get("resolution", [960, 540]),
+        resolution=render_settings.get("resolution", [960, 544]),
         fps=fps,
     )
 

@@ -17,6 +17,7 @@ read one (a ComfyUI depth graph, a downstream script) reads ours too:
       metadata.json               marks / lenses / timings         (here)
       prompt.txt                  default cinematic prompt         (here)
       prompt.<generator>.txt      per-target-generator prompt      (here)
+      prompt_fragments.<gen>.json prompt as addressable pieces     (here)
       stills/                     frame at each mark + diagram      (Blender)
       bundle_manifest.json        what actually got written        (here)
       README.txt                                                    (here)
@@ -30,6 +31,10 @@ Design decisions borrowed from Blockout, deliberately:
   small config table rather than bespoke code.
 * **A generator is a config row, not a code path.** Adding a target model is a
   dict entry in ``GENERATOR_PROFILES``.
+
+previs does not submit to any model: the bundle is handed to the shot
+orchestrator, which composes the full scene prompt around these fragments and
+owns the generation call. ``docs/BUNDLE_CONTRACT.md`` is that interface.
 
 Nothing here imports ``bpy``; it runs on the host and inside Blender alike.
 """
@@ -77,16 +82,24 @@ GENERATOR_PROFILES = {
         ),
     },
     "minimax": {
-        "display_name": "MiniMax / Hailuo (Omni Reference)",
-        "max_duration_s": 10.0,
+        "display_name": "MiniMax H3 (Omni Reference)",
+        "max_duration_s": 15.0,
         "aspect": "16:9",
+        # H3's tokenizer emits <Video N>/<Picture N> literally, so the prompt
+        # must use those exact tokens. Validated live (2026-08): explicit
+        # replace/retain imperatives work where pure negation ("do not inherit
+        # its appearance") failed -- translate the blockout, don't suppress it.
+        "format": "retention",
+        "video_token": "<Video 1>",
+        "picture_token": "<Picture {n}>",
+        # H3 resamples the guide to 24 fps, trims frames down to the 17k+5
+        # grid, and requires multiple-of-32 canvases (see check_target_constraints).
+        "frame_grid": {"k": 17, "offset": 5, "fps": 24},
+        "canvas_multiple": 32,
         "reference_note": (
-            "Video1 defines motion path, body mechanics, performance timing, "
-            "staging, spatial layout, camera position, camera framing, and cut "
-            "rhythm only. Video1 is a grey untextured previs blocking render: do "
-            "not inherit its appearance in any form. Every visual attribute "
-            "comes from the text below; treat the proxy figure as a position and "
-            "timing marker, not a depiction."
+            "Retain the character poses and camera motion from <Video 1>. "
+            "<Video 1> is a grey untextured previs blocking render: replace all "
+            "of its appearance with the description below."
         ),
     },
     "kling": {
@@ -307,7 +320,7 @@ def build_metadata(shot, tracks, camera_keys, library, fps, render_settings=None
     """
     render_settings = render_settings or shot.get("render") or {}
     duration = float(shot["duration_seconds"])
-    resolution = list(render_settings.get("resolution", [960, 540]))
+    resolution = list(render_settings.get("resolution", [960, 544]))
 
     characters = []
     for character in shot.get("characters", []):
@@ -464,9 +477,203 @@ def _blocking_sentences(shot, library):
     return out
 
 
+def build_prompt_fragments(shot, tracks, library, camera_keys, generator="minimax"):
+    """The prompt as addressable pieces, for the shot orchestrator.
+
+    previs does not talk to the video model itself -- its output is handed to
+    the orchestrator, which rolls these fragments into the full scene prompt
+    (adding character/scene prose previs cannot know). prompt.<generator>.txt
+    is rendered FROM these fragments, so the two can never drift.
+
+    Phrasing is the live-validated replace/retain imperative form: name what
+    each reference controls, then translate the grey blockout into the intended
+    scene instead of asking the model to ignore it.
+    """
+    profile = GENERATOR_PROFILES.get(generator, GENERATOR_PROFILES["generic"])
+    video_token = profile.get("video_token", "the reference video")
+    picture_tmpl = profile.get("picture_token", "reference image {n}")
+    camera = shot.get("camera") or {}
+    duration = float(shot["duration_seconds"])
+
+    # -- subjects: one line per reference, stating what it controls -----------
+    subjects = [
+        f"{video_token} controls only: motion path, body mechanics, performance "
+        f"timing, staging, screen geography, camera position and framing, and "
+        f"cut rhythm."
+    ]
+    replace_lines = []
+    for n, character in enumerate(
+        (c for c in shot.get("characters", []) if isinstance(c, dict)), start=1
+    ):
+        asset = library.get("characters", character.get("asset_id", "")) if library else {}
+        name = (asset or {}).get("display_name") or character.get("id", f"character {n}")
+        token = picture_tmpl.format(n=n)
+        detail = (asset or {}).get("notes") or ""
+        subjects.append(
+            f"{token} controls identity, wardrobe and props: {name}."
+            + (f" {detail}" if detail else "")
+        )
+        replace_lines.append(
+            f"Replace the figure from {video_token} that marks {name}'s position "
+            f"and timing with the character {name} from {token}."
+        )
+
+    # -- retention: explicit take/replace imperatives -------------------------
+    retain_lines = [
+        f"Retain the character poses and camera motion from {video_token}.",
+        f"Retain the timing: every mark, turn and stop lands when it does in "
+        f"{video_token}.",
+    ]
+    set_asset = library.get("sets", (shot.get("set") or {}).get("asset_id", "")) if library else {}
+    set_name = (set_asset or {}).get("display_name") or (shot.get("set") or {}).get("asset_id")
+    set_notes = (set_asset or {}).get("notes") or ""
+    if set_name:
+        scene_translation = (
+            f"Replace the grey geometry with {set_name}."
+            + (f" {set_notes}" if set_notes else "")
+        )
+    else:
+        scene_translation = (
+            "Replace the grey geometry with the scene described below."
+        )
+    replace_lines.append(scene_translation)
+
+    # -- prose from the actual blocking ---------------------------------------
+    size = _first_camera_size(shot, tracks, library, camera_keys)
+    moves = sorted(
+        (m for m in camera.get("moves", []) if isinstance(m, dict)),
+        key=lambda m: m.get("start_t", 0.0),
+    )
+    camera_bits = []
+    for move in moves:
+        template = _MOVE_LANGUAGE.get(move.get("type"))
+        if not template:
+            continue
+        dolly_dir = "pushes in"
+        if move.get("type") == "dolly" and "end_position" in move and "position" in move:
+            start = pad3(move["position"], 1.6)
+            end = pad3(move["end_position"], start[2])
+            aim = pad3(move.get("target_position", [0, 0, 0]))
+            dolly_dir = "pushes in" if math.dist(end, aim) < math.dist(start, aim) else "pulls back"
+        camera_bits.append(template.format(size=size, dolly_dir=dolly_dir))
+
+    shot_data = {
+        "duration_s": duration,
+        "lens_mm": camera.get("lens_mm", 35),
+        "aspect": profile["aspect"],
+        "max_duration_s": profile.get("max_duration_s"),
+    }
+    constraints = check_target_constraints(shot, profile)
+    if constraints.get("kept_duration_s") is not None:
+        shot_data["kept_duration_s"] = constraints["kept_duration_s"]
+
+    return {
+        "generator": generator,
+        "subjects_block": subjects,
+        "retain_lines": retain_lines,
+        "replace_lines": replace_lines,
+        "scene_translation": scene_translation,
+        "camera_prose": "; then ".join(camera_bits) if camera_bits else f"A {size} shot",
+        "action_prose": _blocking_sentences(shot, library),
+        "shot_data": shot_data,
+        "notes": shot.get("notes") or "",
+    }
+
+
+def _build_retention_prompt(fragments):
+    """Render prompt text from fragments (the retention/imperative format)."""
+    f = fragments
+    lines = ["[SUBJECTS]"]
+    lines.extend(f["subjects_block"])
+    lines.append("")
+    lines.append("[RETENTION]")
+    lines.extend(f["retain_lines"])
+    lines.extend(f["replace_lines"])
+    lines.append("")
+    lines.append("[SCENE]")
+    lines.append(f["camera_prose"] + ".")
+    if f["action_prose"]:
+        lines.append("Action: " + "; ".join(f["action_prose"]) + ".")
+    lines.append("")
+    lines.append("[SHOT DATA]")
+    sd = f["shot_data"]
+    data_line = (f"Duration: {sd['duration_s']:g}s. Lens: {sd['lens_mm']:g}mm. "
+                 f"Aspect: {sd['aspect']}.")
+    if sd.get("kept_duration_s") is not None and sd["kept_duration_s"] < sd["duration_s"]:
+        data_line += (f" The generator keeps only the first "
+                      f"{sd['kept_duration_s']:.3f}s -- author the action to land "
+                      f"inside that.")
+    lines.append(data_line)
+    cap = sd.get("max_duration_s")
+    if cap and sd["duration_s"] > cap:
+        lines.append(f"NOTE: target caps at {cap:g}s; trim or retime this "
+                     f"{sd['duration_s']:g}s shot.")
+    if f["notes"]:
+        lines.append("")
+        lines.append("[DIRECTOR NOTES]")
+        lines.append(f["notes"])
+    return "\n".join(lines).strip() + "\n"
+
+
+def check_target_constraints(shot, profile, render_settings=None):
+    """Pure math: what the target model actually keeps of this shot.
+
+    MiniMax H3 resamples the guide video to ``frame_grid.fps``, then trims the
+    frame count DOWN to the nearest ``k*n + offset`` grid point -- a 5.0s shot
+    loses its final ~0.54s, which is usually the landing mark. Canvases must be
+    multiples of ``canvas_multiple`` per axis or the workflow needs a resize
+    node. Warns; never mutates the shot.
+    """
+    out = {"warnings": [], "kept_duration_s": None}
+    duration = float(shot["duration_seconds"])
+    grid = profile.get("frame_grid")
+    if grid:
+        k, offset, fps = grid["k"], grid["offset"], grid["fps"]
+        frames = int(round(duration * fps))
+        kept = frames
+        while kept % k != offset:
+            kept -= 1
+        out["target_fps"] = fps
+        out["resampled_frames"] = frames
+        out["kept_frames"] = kept
+        out["kept_duration_s"] = kept / fps
+        if kept != frames:
+            below = kept / fps
+            above_frames = kept + k
+            above = above_frames / fps
+            out["warnings"].append(
+                f"duration {duration:g}s -> {frames} frames @{fps}fps; the target "
+                f"trims to {kept} ({below:.3f}s) -- the last "
+                f"{(frames - kept) / fps:.3f}s of blocking is cut. Use "
+                f"{below:.3f}s or {above:.3f}s."
+            )
+    multiple = profile.get("canvas_multiple")
+    resolution = None
+    if render_settings and render_settings.get("resolution"):
+        resolution = render_settings["resolution"]
+    elif (shot.get("render") or {}).get("resolution"):
+        resolution = shot["render"]["resolution"]
+    if multiple and resolution:
+        w, h = int(resolution[0]), int(resolution[1])
+        if w % multiple or h % multiple:
+            sw = max(multiple, round(w / multiple) * multiple)
+            sh = max(multiple, round(h / multiple) * multiple)
+            out["canvas_valid"] = False
+            out["warnings"].append(
+                f"resolution {w}x{h} is not a multiple of {multiple}; the "
+                f"workflow will need a resize. Use {sw}x{sh}."
+            )
+        else:
+            out["canvas_valid"] = True
+    return out
+
+
 def build_prompt(shot, tracks, library, camera_keys, generator="generic"):
     """A cinematic prompt written from the actual blocking, per generator."""
     profile = GENERATOR_PROFILES.get(generator, GENERATOR_PROFILES["generic"])
+    if profile.get("format") == "retention":
+        return _build_retention_prompt(
+            build_prompt_fragments(shot, tracks, library, camera_keys, generator))
     duration = float(shot["duration_seconds"])
     size = _first_camera_size(shot, tracks, library, camera_keys)
     camera = shot.get("camera") or {}
@@ -555,6 +762,18 @@ def write_sidecars(out_dir, shot, tracks, camera_keys, library, fps,
         name = "prompt.txt" if generator == "generic" else f"prompt.{generator}.txt"
         (out_dir / name).write_text(prompt, encoding="utf-8")
         written[f"prompt_{generator}"] = name
+        profile = GENERATOR_PROFILES.get(generator, {})
+        if profile.get("format") == "retention":
+            fragments = build_prompt_fragments(shot, tracks, library, camera_keys, generator)
+            frag_name = f"prompt_fragments.{generator}.json"
+            _dump(out_dir / frag_name, fragments)
+            written[f"prompt_fragments_{generator}"] = frag_name
+            constraints = check_target_constraints(shot, profile, render_settings)
+            metadata.setdefault("target_constraints", {})[generator] = constraints
+            for warning in constraints["warnings"]:
+                print(f"[previs] WARNING ({generator}): {warning}")
+            # re-write metadata now it carries the constraints
+            _dump(out_dir / "metadata.json", metadata)
 
     return written, metadata
 
@@ -566,6 +785,9 @@ def write_manifest(out_dir, shot, entries, fps, extra=None):
     manifest = {
         "format": "previs.bundle_manifest",
         "version": BUNDLE_FORMAT_VERSION,
+        # The orchestrator-facing contract (docs/BUNDLE_CONTRACT.md): bump on
+        # any breaking change to file roles or the fields promised here.
+        "contract_version": "1.0",
         "shot_id": shot.get("shot_id"),
         "fps": int(fps),
         "duration_s": float(shot["duration_seconds"]),
