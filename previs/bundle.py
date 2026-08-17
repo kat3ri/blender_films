@@ -546,6 +546,12 @@ def build_prompt_fragments(shot, tracks, library, camera_keys, generator="minima
     )
     camera_bits = []
     for move in moves:
+        # A framing preset already names the shot ("an over-the-shoulder
+        # shot"); prefer that over re-deriving generic move language.
+        framing = move.get("_framing")
+        if framing:
+            camera_bits.append(f"The camera holds {framing}")
+            continue
         template = _MOVE_LANGUAGE.get(move.get("type"))
         if not template:
             continue

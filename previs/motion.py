@@ -556,6 +556,18 @@ def build_camera_keys(shot, tracks, library, fps=None):
         position, aim = _eval_move(shot, active, tracks, library, t_eval, stage_centre)
         rotation = look_at_euler(position, aim)
 
+        # Roll is the one orientation a look-at cannot imply: it is a framing
+        # choice, not a consequence of where the camera points. Only the dutch
+        # preset sets it today; a move may ramp it in over its own span.
+        roll_deg = float(active.get("roll_deg", 0.0))
+        if roll_deg:
+            span = float(active["end_t"]) - float(active["start_t"])
+            ramp = float(active.get("roll_ramp_s", 0.0))
+            weight = 1.0
+            if ramp > 1e-6 and span > 1e-6:
+                weight = min(1.0, max(0.0, (t_eval - float(active["start_t"])) / ramp))
+            rotation[1] = math.radians(roll_deg) * weight
+
         # Keep yaw continuous so a wrap past +/-pi doesn't spin the camera.
         if previous_rot_z is not None:
             while rotation[2] - previous_rot_z > math.pi:

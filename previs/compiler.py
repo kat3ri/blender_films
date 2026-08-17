@@ -11,6 +11,7 @@ from pathlib import Path
 from . import blender_api as api
 from . import rig
 from .asset_library import AssetLibrary, expand_fixtures
+from .framing import expand_presets
 from .motion import build_camera_keys, build_tracks, check_camera_bounds, pad3
 
 
@@ -65,6 +66,11 @@ def _assemble_scene(shot, assets_root=None, verbose=True):
             obj = api.place_character(character["id"], asset, start_position, start_facing)
             api.animate_character(obj, track, fps)
 
+    # Framing presets resolve against where the subjects actually stand, so
+    # they expand after tracks exist and before any camera maths runs. Every
+    # stage downstream sees ordinary move dicts.
+    n_presets = expand_presets(shot, tracks, library)
+
     camera_spec = shot.get("camera") or {}
     camera = api.create_camera(float(camera_spec.get("lens_mm", 35.0)))
     camera_keys = build_camera_keys(shot, tracks, library, fps)
@@ -85,7 +91,10 @@ def _assemble_scene(shot, assets_root=None, verbose=True):
         print(f"[previs] characters  {[c.get('id') for c in shot.get('characters', [])]}"
               + (f"  (articulated: {list(rigged)})" if rigged else ""))
         print(f"[previs] props       {[p.get('id') for p in shot.get('props', [])]}")
-        print(f"[previs] camera      {[m.get('type') for m in camera_spec.get('moves', [])]}")
+        moves_desc = [m.get("_preset") or m.get("type")
+                      for m in camera_spec.get("moves", [])]
+        print(f"[previs] camera      {moves_desc}"
+              + (f"  ({n_presets} preset(s) expanded)" if n_presets else ""))
         for kind, asset_id in library.missing:
             print(f"[previs] WARNING     no {kind[:-1]} asset {asset_id!r}; using placeholder")
         for warning in warnings:
