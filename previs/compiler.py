@@ -185,8 +185,7 @@ def _estimate_depth_range(shot, ctx):
 
 
 def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
-                   generators=None, with_depth=True, with_pose=True, with_stills=True,
-                   pano_override=None):
+                   generators=None, with_depth=True, with_pose=True, with_stills=True):
     """Export a full control-layer bundle for a downstream AI video generator.
 
     Renders the reference video and (optionally) a depth pass, captures exact
@@ -215,41 +214,6 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
     entries.update(written)
     if verbose:
         print(f"[previs] bundle      wrote {len(written)} sidecar file(s)")
-
-    # Background plates cut from the set's panorama, driven by where this
-    # shot's camera actually looks. Host-side maths on the camera track we
-    # just wrote -- no Blender, no extra render.
-    set_asset = ctx["library"].get("sets", (shot.get("set") or {}).get("asset_id", ""))
-    pano_path = pano_override or (set_asset or {}).get("pano")
-    if pano_path and Path(pano_path).is_file():
-        try:
-            from . import pano as pano_mod
-            camera_motion = bundle_mod.build_camera_motion(shot, ctx["camera_keys"], fps)
-            timeline = pano_mod.plates_for_shot(
-                pano_path, camera_motion, out_dir / "plates",
-                yaw_offset_deg=float((set_asset or {}).get("pano_yaw_offset_deg", 0.0)),
-            )
-            bundle_mod._dump(out_dir / "plates.json", timeline)
-            entries["plates"] = "plates/"
-            entries["plates_timeline"] = "plates.json"
-            metadata["plates"] = timeline
-            bundle_mod._dump(out_dir / "metadata.json", metadata)
-            # Re-emit the prompts now the plate timeline exists, so the
-            # [BACKGROUND] block and its <Picture N> numbering are present.
-            shot["_plates"] = timeline
-            rewritten, _ = bundle_mod.write_sidecars(
-                out_dir, shot, ctx["tracks"], ctx["camera_keys"], ctx["library"],
-                fps, generators=generators, render_settings=ctx["render_settings"])
-            entries.update(rewritten)
-            if verbose:
-                spans = ", ".join(f"{p['t_start']:.2f}-{p['t_end']:.2f}s @{p['yaw_deg']:.0f}deg"
-                                  for p in timeline["plates"])
-                print(f"[previs] bundle      {len(timeline['plates'])} pano plate(s): {spans}")
-        except Exception as exc:  # a missing pano must never fail the bundle
-            if verbose:
-                print(f"[previs] WARNING     pano plates failed: {exc}")
-    elif pano_path and verbose:
-        print(f"[previs] WARNING     set pano not found: {pano_path}")
 
     # Reference control video.
     reference = out_dir / f"{shot_id}_reference.mp4"

@@ -399,3 +399,157 @@ Time: 00:01.62 (Saving: 00:00.02)
 Append frame 99
 Time: 00:02.64 (Saving: 00:00.03)
 
+Append frame 100
+Time: 00:02.80 (Saving: 00:00.02)
+
+Append frame 101
+Time: 00:03.06 (Saving: 00:00.22)
+
+Append frame 102
+Time: 00:02.89 (Saving: 00:00.02)
+
+Append frame 103
+Time: 00:02.71 (Saving: 00:00.02)
+
+Append frame 104
+Time: 00:04.59 (Saving: 00:00.02)
+
+Append frame 105
+Time: 00:04.69 (Saving: 00:00.03)
+
+Append frame 106
+Time: 00:02.83 (Saving: 00:00.02)
+
+Append frame 107
+Time: 00:02.63 (Saving: 00:00.04)
+
+Append frame 108
+Time: 00:03.02 (Saving: 00:00.05)
+
+Append frame 109
+Time: 00:03.91 (Saving: 00:00.03)
+
+Append frame 110
+Time: 00:02.75 (Saving: 00:00.02)
+
+Append frame 111
+Time: 00:03.63 (Saving: 00:01.08)
+
+Append frame 112
+Time: 00:03.96 (Saving: 00:00.03)
+
+Append frame 113
+Time: 00:03.76 (Saving: 00:00.02)
+
+Append frame 114
+Time: 00:05.80 (Saving: 00:00.04)
+
+Append frame 115
+Time: 00:03.92 (Saving: 00:00.02)
+
+Append frame 116
+Time: 00:03.73 (Saving: 00:00.02)
+
+Append frame 117
+Time: 00:03.38 (Saving: 00:00.02)
+
+Append frame 118
+Time: 00:10.14 (Saving: 00:00.54)
+
+Append frame 119
+Time: 00:04.35 (Saving: 00:00.02)
+
+Append frame 120
+Time: 00:04.58 (Saving: 00:00.46)
+
+Append frame 121
+Time: 00:02.67 (Saving: 00:00.02)
+
+Append frame 122
+Time: 00:03.77 (Saving: 00:00.03)
+
+Append frame 123
+Time: 00:03.35 (Saving: 00:00.02)
+
+Append frame 124
+Time: 00:09.43 (Saving: 00:00.02)
+
+Saved: '/weka/home-kateriw/blender_films/renders/bundles/LOUNGE_PAN01/stills/LOUNGE_PAN01_0001.png'
+Time: 00:01.80 (Saving: 00:00.20)
+
+Saved: '/weka/home-kateriw/blender_films/renders/bundles/LOUNGE_PAN01/stills/LOUNGE_PAN01_0124.png'
+Time: 00:06.47 (Saving: 00:00.06)
+
+01:40:04 | INFO: Data are loaded, start creating Blender stuff
+01:40:04 | INFO: Blender create Mesh node geometry_0
+01:40:04 | INFO: glTF import finished in 0.02s
+01:40:04 | INFO: Data are loaded, start creating Blender stuff
+01:40:04 | INFO: Blender create Mesh node geometry_0
+01:40:04 | INFO: glTF import finished in 0.02s
+01:40:04 | INFO: Data are loaded, start creating Blender stuff
+01:40:04 | INFO: Blender create Mesh node geometry_0
+01:40:04 | INFO: glTF import finished in 0.02s
+01:40:05 | INFO: Data are loaded, start creating Blender stuff
+01:40:05 | INFO: Blender create Mesh node geometry_0
+01:40:05 | INFO: glTF import finished in 0.02s
+01:40:05 | INFO: Data are loaded, start creating Blender stuff
+01:40:05 | INFO: Blender create Mesh node geometry_0
+01:40:05 | INFO: glTF import finished in 0.02s
+01:40:05 | INFO: Data are loaded, start creating Blender stuff
+01:40:05 | INFO: Blender create Mesh node geometry_0
+01:40:05 | INFO: glTF import finished in 0.07s
+01:40:05 | INFO: Data are loaded, start creating Blender stuff
+01:40:05 | INFO: Blender create Mesh node geometry_0
+01:40:05 | INFO: glTF import finished in 0.08s
+01:40:05 | INFO: Data are loaded, start creating Blender stuff
+01:40:05 | INFO: Blender create Mesh node geometry_0
+01:40:05 | INFO: glTF import finished in 0.15s
+01:40:05 | INFO: Data are loaded, start creating Blender stuff
+01:40:05 | INFO: Blender create Mesh node geometry_0
+01:40:06 | INFO: glTF import finished in 0.34s
+01:40:06 | INFO: Data are loaded, start creating Blender stuff
+01:40:06 | INFO: Blender create Mesh node geometry_0
+01:40:06 | INFO: glTF import finished in 0.02s
+01:40:06 | INFO: Data are loaded, start creating Blender stuff
+01:40:06 | INFO: Blender create Mesh node geometry_0
+01:40:06 | INFO: glTF import finished in 0.02s
+01:40:06 | INFO: Data are loaded, start creating Blender stuff
+01:40:06 | INFO: Blender create Mesh node geometry_0
+01:40:06 | INFO: glTF import finished in 0.02s
+01:40:06 | INFO: Data are loaded, start creating Blender stuff
+01:40:06 | INFO: Blender create Mesh node geometry_0
+01:40:06 | INFO: glTF import finished in 0.02s
+01:40:06 | INFO: Data are loaded, start creating Blender stuff
+01:40:06 | INFO: Blender create Mesh node geometry_0
+01:40:06 | INFO: glTF import finished in 0.02s
+01:40:06 | INFO: Data are loaded, start creating Blender stuff
+01:40:06 | INFO: Blender create Mesh node geometry_0
+01:40:06 | INFO: glTF import finished in 0.02s
+01:40:06 | INFO: Data are loaded, start creating Blender stuff
+01:40:06 | INFO: Blender create Mesh node geometry_0
+01:40:06 | INFO: glTF import finished in 0.02s
+01:40:07 | INFO: Data are loaded, start creating Blender stuff
+01:40:07 | INFO: Blender create Mesh node geometry_0
+01:40:07 | INFO: glTF import finished in 0.02s
+01:40:07 | INFO: Data are loaded, start creating Blender stuff
+01:40:07 | INFO: Blender create Mesh node geometry_0
+01:40:07 | INFO: glTF import finished in 0.35s
+Saved: '/weka/home-kateriw/blender_films/renders/bundles/LOUNGE_PAN01/stills/blocking_diagram.png'
+Time: 00:10.41 (Saving: 00:00.07)
+
+[previs] shot        LOUNGE_PAN01
+[previs] duration    5.166666666666667s @ 24fps (1-124)
+[previs] characters  []
+[previs] props       []
+[previs] camera      ['pan']
+[previs] bundle      wrote 4 sidecar file(s)
+[previs] WARNING     pano plates failed: No module named 'PIL'
+[previs] bundle      reference -> LOUNGE_PAN01_reference.mp4
+[previs] bundle      2 still(s) -> stills/
+[previs] bundle      blocking_diagram -> stills/
+[previs] bundle      manifest -> bundle_manifest.json (8 entries)
+
+Blender quit
+[previs] blender     /weka/home-kateriw/3d/blender-4.2.0-linux-x64/blender
+[previs] bundle: /weka/home-kateriw/blender_films/renders/bundles/LOUNGE_PAN01
+=== EXIT 0 ===

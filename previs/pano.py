@@ -223,3 +223,75 @@ def load_camera_motion(bundle_dir):
         raise FileNotFoundError(f"{path} not found -- bundle the shot first")
     with path.open(encoding="utf-8") as handle:
         return json.load(handle)
+
+
+def attach_to_bundle(bundle_dir, shot, library, pano_override=None, verbose=True):
+    """Add background plates to an existing bundle. HOST-SIDE ONLY.
+
+    This cannot run inside Blender: plate rendering needs numpy and Pillow, and
+    Blender's bundled Python has no pip (the repo's standing constraint). So
+    `compile_bundle` writes camera_motion.json inside Blender, and the CLI calls
+    this afterwards on the host, where those packages exist. Found the hard way
+    -- the first end-to-end run reported `pano plates failed: No module named
+    'PIL'` from inside the Blender process.
+
+    Re-emits the prompts too, so the [BACKGROUND] block and its <Picture N>
+    numbering reflect the plates, and updates the manifest. Returns the timeline
+    or None when the set has no panorama.
+    """
+    from . import bundle as bundle_mod
+
+    bundle_dir = Path(bundle_dir)
+    set_asset = library.get("sets", (shot.get("set") or {}).get("asset_id", "")) if library else {}
+    pano_path = pano_override or (set_asset or {}).get("pano")
+    if not pano_path or not Path(pano_path).is_file():
+        if verbose and pano_path:
+            print(f"[previs] WARNING     set pano not found: {pano_path}")
+        return None
+
+    camera_motion = load_camera_motion(bundle_dir)
+    timeline = plates_for_shot(
+        pano_path, camera_motion, bundle_dir / "plates",
+        yaw_offset_deg=float((set_asset or {}).get("pano_yaw_offset_deg", 0.0)),
+    )
+    bundle_mod._dump(bundle_dir / "plates.json", timeline)
+
+    manifest_path = bundle_dir / "bundle_manifest.json"
+    manifest = {}
+    if manifest_path.is_file():
+        with manifest_path.open(encoding="utf-8") as handle:
+            manifest = json.load(handle)
+    entries = dict(manifest.get("files") or {})
+    entries["plates"] = "plates/"
+    entries["plates_timeline"] = "plates.json"
+
+    # Prompts are pure stdlib, so they re-emit fine here; passing _plates is
+    # what produces the [BACKGROUND] block.
+    shot = dict(shot)
+    shot["_plates"] = timeline
+    fps = int(manifest.get("fps") or shot.get("fps", 12))
+    from .motion import build_camera_keys, build_tracks
+    tracks = build_tracks(shot, library)
+    camera_keys = build_camera_keys(shot, tracks, library, fps)
+    rewritten, metadata = bundle_mod.write_sidecars(
+        bundle_dir, shot, tracks, camera_keys, library, fps,
+        generators=tuple(manifest.get("generators") or ("minimax",)),
+        render_settings=shot.get("render") or {},
+    )
+    entries.update(rewritten)
+    metadata["plates"] = timeline
+    bundle_mod._dump(bundle_dir / "metadata.json", metadata)
+
+    manifest["files"] = dict(sorted(entries.items()))
+    # plates/ + plates.json are contract 1.1 additions
+    manifest["contract_version"] = bundle_mod.CONTRACT_VERSION
+    manifest["plates"] = {"count": len(timeline["plates"]),
+                          "pano": timeline["pano"],
+                          "pano_yaw_offset_deg": timeline["pano_yaw_offset_deg"]}
+    bundle_mod._dump(manifest_path, manifest)
+
+    if verbose:
+        spans = ", ".join(f"{p['t_start']:.2f}-{p['t_end']:.2f}s @{p['yaw_deg']:.0f}deg"
+                          for p in timeline["plates"])
+        print(f"[previs] plates      {len(timeline['plates'])}: {spans}")
+    return timeline

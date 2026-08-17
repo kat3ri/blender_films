@@ -51,6 +51,8 @@ from .motion import pad3
 
 EPS = 1e-9
 BUNDLE_FORMAT_VERSION = "1.0"
+# The orchestrator-facing contract (docs/BUNDLE_CONTRACT.md).
+CONTRACT_VERSION = "1.1"
 
 
 # ---------------------------------------------------------------------------
@@ -823,7 +825,7 @@ def write_manifest(out_dir, shot, entries, fps, extra=None):
         "version": BUNDLE_FORMAT_VERSION,
         # The orchestrator-facing contract (docs/BUNDLE_CONTRACT.md): bump on
         # any breaking change to file roles or the fields promised here.
-        "contract_version": "1.1",
+        "contract_version": CONTRACT_VERSION,
         "shot_id": shot.get("shot_id"),
         "fps": int(fps),
         "duration_s": float(shot["duration_seconds"]),

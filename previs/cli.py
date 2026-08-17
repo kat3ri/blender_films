@@ -138,8 +138,6 @@ def bundle(args):
         command += ["--assets", str(Path(args.assets).resolve())]
     if args.generators:
         command += ["--generators", args.generators]
-    if getattr(args, "pano", None):
-        command += ["--pano", args.pano]
     if args.no_depth:
         command.append("--no-depth")
     if args.no_pose:
@@ -157,6 +155,21 @@ def bundle(args):
     if not manifest_path.is_file():
         print(f"error: bundle manifest not written: {manifest_path}", file=sys.stderr)
         return 1
+
+    # Background plates run HOST-SIDE, after Blender exits: they need numpy and
+    # Pillow, and Blender's bundled Python has no pip. Doing this inside
+    # compile_bundle failed with "No module named 'PIL'".
+    if not args.no_plates:
+        try:
+            from .asset_library import AssetLibrary
+            from .pano import attach_to_bundle
+            library = AssetLibrary(Path(args.assets).resolve() if args.assets else None)
+            attach_to_bundle(out_dir, shot, library, pano_override=args.pano)
+        except ImportError as exc:
+            print(f"[previs] WARNING     plates need numpy + Pillow on the host ({exc})")
+        except Exception as exc:  # never fail a good bundle over the plates
+            print(f"[previs] WARNING     pano plates failed: {exc}")
+
     print(f"[previs] bundle: {out_dir}")
     return 0
 
@@ -878,6 +891,8 @@ def main(argv=None):
         help="comma-separated target generators (default: generic,seedance,minimax)",
     )
     bundle_parser.add_argument("--no-depth", action="store_true", help="skip the depth pass")
+    bundle_parser.add_argument("--no-plates", action="store_true",
+                               help="skip the pano background plates")
     bundle_parser.add_argument("--no-pose", action="store_true", help="skip pose landmark capture")
     bundle_parser.add_argument("--no-stills", action="store_true", help="skip mark stills")
     bundle_parser.add_argument(
