@@ -1,6 +1,0 @@
-=== bundle (presets + grid + diagram + quality report) ===
-usage: previs [-h]
-              {render,camera-path,bundle,import,asset-search-polyhaven,asset-fetch-polyhaven,survey,continuity,validate,info,mocap-inspect,mocap-search,mocap-fetch}
-              ...
-previs: error: unrecognized arguments: generic
-=== EXIT 2 ===
