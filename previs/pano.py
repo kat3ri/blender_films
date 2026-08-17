@@ -51,6 +51,12 @@ DEFAULT_MARGIN = 1.15
 # H3 has nine image slots shared with the cast; three plates is already
 # generous for one shot.
 MAX_PLATES = 3
+# A plate is only a correct reprojection from the pano's own capture point.
+# Move the camera off it and the plate disagrees with the render by roughly
+# atan(offset / distance_to_subject) -- a 1 m step with the subject 4 m away is
+# ~14 deg; the same step 1.5 m away is ~34 deg. Warn past this so the error is
+# a number you can design shots against rather than something you notice later.
+PARALLAX_WARN_DEG = 12.0
 
 
 def fov_from_lens(lens_mm, aspect=16.0 / 9.0):
@@ -68,8 +74,40 @@ def _angular_distance_deg(yaw_a, pitch_a, yaw_b, pitch_b):
     return math.degrees(math.acos(max(-1.0, min(1.0, dot))))
 
 
+def _origin_relative_view(frame, pano_origin):
+    """Yaw/pitch from the PANO ORIGIN toward what this frame looks at.
+
+    Once the camera leaves the capture point, its own forward vector is the
+    wrong thing to cut a plate along: the plate is the view from the pano
+    point, so aiming it at the camera's heading shows the correct wall only by
+    luck. Aiming from the origin toward the camera's aim point keeps the plate
+    on the right part of the room; the residual disagreement is parallax, which
+    `plate_parallax` reports.
+    """
+    aim = frame.get("aim")
+    if aim is None:
+        return frame["pan_deg"], frame["tilt_deg"], 0.0
+    position = frame.get("position") or [0.0, 0.0, 0.0]
+    offset = math.sqrt(sum((position[i] - pano_origin[i]) ** 2 for i in range(3)))
+    vector = [aim[i] - pano_origin[i] for i in range(3)]
+    horizontal = math.hypot(vector[0], vector[1])
+    if horizontal < 1e-9 and abs(vector[2]) < 1e-9:
+        return frame["pan_deg"], frame["tilt_deg"], offset
+    yaw = math.degrees(math.atan2(vector[1], vector[0]))
+    pitch = math.degrees(math.atan2(vector[2], horizontal))
+    return yaw, pitch, offset
+
+
+def plate_parallax(offset_m, subject_distance_m):
+    """Angular disagreement between the plate and the render, in degrees."""
+    if subject_distance_m <= 1e-6:
+        return 90.0
+    return math.degrees(math.atan(abs(offset_m) / subject_distance_m))
+
+
 def segment_frames(frames, fov_x_deg, yaw_offset_deg=0.0,
-                   new_plate_at=DEFAULT_NEW_PLATE_AT, max_plates=MAX_PLATES):
+                   new_plate_at=DEFAULT_NEW_PLATE_AT, max_plates=MAX_PLATES,
+                   pano_origin=None):
     """Split a camera track into the fewest plates that cover what it sees.
 
     A locked-off shot yields one plate; a pan yields two or three. Each plate is
@@ -81,35 +119,61 @@ def segment_frames(frames, fov_x_deg, yaw_offset_deg=0.0,
     if not frames:
         return []
 
+    origin = list(pano_origin or [0.0, 0.0, 0.0])
+    views = []
+    for frame in frames:
+        yaw, pitch, offset = _origin_relative_view(frame, origin)
+        views.append({"frame": frame, "yaw": yaw + yaw_offset_deg,
+                      "pitch": pitch, "offset": offset})
+
     threshold = fov_x_deg * float(new_plate_at)
-    groups = [[frames[0]]]
-    anchor = (frames[0]["pan_deg"] + yaw_offset_deg, frames[0]["tilt_deg"])
-    for frame in frames[1:]:
-        yaw = frame["pan_deg"] + yaw_offset_deg
-        drift = _angular_distance_deg(yaw, frame["tilt_deg"], anchor[0], anchor[1])
+    groups = [[views[0]]]
+    anchor = (views[0]["yaw"], views[0]["pitch"])
+    for view in views[1:]:
+        yaw = view["yaw"]
+        drift = _angular_distance_deg(yaw, view["pitch"], anchor[0], anchor[1])
         if drift > threshold and len(groups) < max_plates:
-            groups.append([frame])
-            anchor = (yaw, frame["tilt_deg"])
+            groups.append([view])
+            anchor = (yaw, view["pitch"])
         else:
-            groups[-1].append(frame)
+            groups[-1].append(view)
 
     plates = []
     for index, group in enumerate(groups):
         # Circular mean for yaw so a group straddling +/-180 does not average
         # to the opposite wall.
-        sin_sum = sum(math.sin(math.radians(f["pan_deg"] + yaw_offset_deg)) for f in group)
-        cos_sum = sum(math.cos(math.radians(f["pan_deg"] + yaw_offset_deg)) for f in group)
+        sin_sum = sum(math.sin(math.radians(v["yaw"])) for v in group)
+        cos_sum = sum(math.cos(math.radians(v["yaw"])) for v in group)
         yaw = math.degrees(math.atan2(sin_sum, cos_sum))
-        pitch = sum(f["tilt_deg"] for f in group) / len(group)
+        pitch = sum(v["pitch"] for v in group) / len(group)
+
+        offsets = [v["offset"] for v in group]
+        distances = []
+        for v in group:
+            aim = v["frame"].get("aim")
+            position = v["frame"].get("position")
+            if aim and position:
+                distances.append(math.sqrt(sum((aim[i] - position[i]) ** 2
+                                               for i in range(3))))
+        max_offset = max(offsets)
+        near = min(distances) if distances else 0.0
+        parallax = plate_parallax(max_offset, near) if distances else 0.0
+
         plates.append({
             "index": index + 1,
             "yaw_deg": round(yaw, 3),
             "pitch_deg": round(pitch, 3),
-            "frame_start": group[0]["frame"],
-            "frame_end": group[-1]["frame"],
-            "t_start": round(group[0]["t"], 4),
-            "t_end": round(group[-1]["t"], 4),
+            "frame_start": group[0]["frame"]["frame"],
+            "frame_end": group[-1]["frame"]["frame"],
+            "t_start": round(group[0]["frame"]["t"], 4),
+            "t_end": round(group[-1]["frame"]["t"], 4),
             "frame_count": len(group),
+            # How far the camera strays from the pano capture point over this
+            # plate's span, and what that costs in angular agreement.
+            "camera_offset_m": round(max_offset, 4),
+            "nearest_subject_m": round(near, 4),
+            "parallax_deg": round(parallax, 2),
+            "parallax_ok": bool(parallax <= PARALLAX_WARN_DEG),
         })
     return plates
 
@@ -159,8 +223,13 @@ def render_plate(pano, yaw_deg, pitch_deg, fov_x, width=DEFAULT_PLATE_W,
     aspect = width / float(height)
     half_x = math.tan(fov_x / 2.0)
     half_y = half_x / aspect
-    xs = np.linspace(half_x, -half_x, width)      # +X of the image is screen-left
-    ys = np.linspace(half_y, -half_y, height)     # +Y of the image is screen-up
+    # Handedness matters and is easy to get backwards: with forward=+X and
+    # world up=+Z, `right` is -Y, so the image's LAST column must sample
+    # +right. Getting this reversed mirrors the plate -- which looks like a
+    # perfectly plausible room until you notice signage reads backwards, and
+    # which centre-pixel tests cannot catch.
+    xs = np.linspace(-half_x, half_x, width)      # image +x is screen-right
+    ys = np.linspace(half_y, -half_y, height)     # image +y is screen-down
     grid_x, grid_y = np.meshgrid(xs, ys)
 
     directions = (forward[None, None, :]
@@ -173,7 +242,7 @@ def render_plate(pano, yaw_deg, pitch_deg, fov_x, width=DEFAULT_PLATE_W,
 def plates_for_shot(pano_path, camera_motion, out_dir, yaw_offset_deg=0.0,
                     width=DEFAULT_PLATE_W, height=DEFAULT_PLATE_H,
                     margin=DEFAULT_MARGIN, new_plate_at=DEFAULT_NEW_PLATE_AT,
-                    max_plates=MAX_PLATES, prefix="plate"):
+                    max_plates=MAX_PLATES, prefix="plate", pano_origin=None):
     """Cut the plates a shot's camera actually sees, and write them out.
 
     `camera_motion` is a loaded camera_motion.json. Returns the timeline dict
@@ -191,7 +260,8 @@ def plates_for_shot(pano_path, camera_motion, out_dir, yaw_offset_deg=0.0,
     fov_x, _ = fov_from_lens(lens_mm, aspect=width / float(height))
     fov_x_deg = math.degrees(fov_x)
     plates = segment_frames(frames, fov_x_deg, yaw_offset_deg,
-                            new_plate_at=new_plate_at, max_plates=max_plates)
+                            new_plate_at=new_plate_at, max_plates=max_plates,
+                            pano_origin=pano_origin)
 
     pano = np.asarray(Image.open(pano_path).convert("RGB"))
     out_dir = Path(out_dir)
@@ -213,6 +283,15 @@ def plates_for_shot(pano_path, camera_motion, out_dir, yaw_offset_deg=0.0,
         "fov_x_deg": round(fov_x_deg, 3),
         "plate_margin": float(margin),
         "plate_size": [int(width), int(height)],
+        "pano_origin": [round(float(v), 4) for v in (pano_origin or [0.0, 0.0, 0.0])],
+        "parallax_warn_deg": PARALLAX_WARN_DEG,
+        "warnings": [
+            f"plate {p['index']} ({p['t_start']:g}-{p['t_end']:g}s): the camera "
+            f"strays {p['camera_offset_m']:.2f} m from the pano point with the "
+            f"nearest subject {p['nearest_subject_m']:.2f} m away, so the plate "
+            f"disagrees with the render by about {p['parallax_deg']:.0f} deg."
+            for p in plates if not p["parallax_ok"]
+        ],
         "plates": plates,
     }
 
@@ -253,6 +332,7 @@ def attach_to_bundle(bundle_dir, shot, library, pano_override=None, verbose=True
     timeline = plates_for_shot(
         pano_path, camera_motion, bundle_dir / "plates",
         yaw_offset_deg=float((set_asset or {}).get("pano_yaw_offset_deg", 0.0)),
+        pano_origin=(set_asset or {}).get("pano_origin_m"),
     )
     bundle_mod._dump(bundle_dir / "plates.json", timeline)
 
@@ -294,4 +374,6 @@ def attach_to_bundle(bundle_dir, shot, library, pano_override=None, verbose=True
         spans = ", ".join(f"{p['t_start']:.2f}-{p['t_end']:.2f}s @{p['yaw_deg']:.0f}deg"
                           for p in timeline["plates"])
         print(f"[previs] plates      {len(timeline['plates'])}: {spans}")
+        for warning in timeline["warnings"]:
+            print(f"[previs] WARNING     {warning}")
     return timeline

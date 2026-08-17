@@ -103,3 +103,92 @@ class TestEaWorldImport(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestHandedness(unittest.TestCase):
+    """A mirrored plate looks like a valid room until text reads backwards.
+
+    Centre-pixel checks cannot catch it -- a mirror fixes the centre -- so this
+    asserts on an asymmetric feature instead. Caught in a real H3 render by a
+    'wifi hotspot' sign reading in reverse.
+    """
+
+    def setUp(self):
+        import numpy as np
+        # equirect whose brightness rises with u, so left/right is unambiguous
+        w, h = 1024, 512
+        u = np.linspace(0, 1, w)[None, :].repeat(h, 0)
+        self.pano = np.stack([(u * 255).astype("uint8")] * 3, -1)
+        self.fov, _ = P.fov_from_lens(35, 16 / 9)
+
+    def test_plate_is_not_mirrored(self):
+        # u DEcreases as world yaw increases (u = 1 - atan2(y,x)/2pi), so
+        # screen-right -- which is -Y, i.e. lower yaw -- must be BRIGHTER.
+        img = P.render_plate(self.pano, 90.0, 0.0, self.fov, 128, 72)
+        left = float(img[36, :20, 0].mean())
+        right = float(img[36, -20:, 0].mean())
+        self.assertGreater(right, left,
+                           "plate is horizontally mirrored: screen-right must "
+                           "sample the +right (-Y) direction")
+
+    def test_vertical_is_not_flipped(self):
+        import numpy as np
+        h, w = 512, 1024
+        v = np.linspace(0, 1, h)[:, None].repeat(w, 1)   # v=0 is the up pole
+        pano = np.stack([(v * 255).astype("uint8")] * 3, -1)
+        img = P.render_plate(pano, 0.0, 0.0, self.fov, 128, 72)
+        top = float(img[:10, 64, 0].mean())
+        bottom = float(img[-10:, 64, 0].mean())
+        self.assertLess(top, bottom, "plate is vertically flipped: v=0 is up")
+
+
+class TestParallax(unittest.TestCase):
+    """Off-centre camera: the plate stops being an exact reprojection."""
+
+    FOV = 54.4
+
+    def frames(self, positions, aim):
+        out = []
+        for i, pos in enumerate(positions):
+            dx, dy = aim[0] - pos[0], aim[1] - pos[1]
+            out.append({"frame": i + 1, "t": i / 24.0, "position": list(pos),
+                        "aim": list(aim),
+                        "pan_deg": math.degrees(math.atan2(dy, dx)),
+                        "tilt_deg": 0.0})
+        return out
+
+    def test_at_the_pano_point_there_is_no_parallax(self):
+        frames = self.frames([[0, 0, 1.1]] * 30, [4, 0, 1.1])
+        plates = P.segment_frames(frames, self.FOV, pano_origin=[0, 0, 1.1])
+        self.assertEqual(plates[0]["camera_offset_m"], 0.0)
+        self.assertEqual(plates[0]["parallax_deg"], 0.0)
+        self.assertTrue(plates[0]["parallax_ok"])
+
+    def test_offset_camera_reports_the_angle(self):
+        # 1 m off the pano point, subject 4 m away -> atan(1/4) ~ 14 deg
+        frames = self.frames([[0, 1.0, 1.1]] * 30, [4, 1.0, 1.1])
+        plates = P.segment_frames(frames, self.FOV, pano_origin=[0, 0, 1.1])
+        self.assertAlmostEqual(plates[0]["camera_offset_m"], 1.0, places=3)
+        self.assertAlmostEqual(plates[0]["parallax_deg"], 14.04, places=1)
+        self.assertFalse(plates[0]["parallax_ok"])
+
+    def test_close_subject_is_worse_than_far(self):
+        near = P.segment_frames(self.frames([[0, 1.0, 1.1]] * 10, [1.5, 1.0, 1.1]),
+                                self.FOV, pano_origin=[0, 0, 1.1])
+        far = P.segment_frames(self.frames([[0, 1.0, 1.1]] * 10, [8.0, 1.0, 1.1]),
+                               self.FOV, pano_origin=[0, 0, 1.1])
+        self.assertGreater(near[0]["parallax_deg"], far[0]["parallax_deg"])
+
+    def test_plate_is_aimed_from_the_pano_point_not_the_camera(self):
+        # camera stands well off to the side but looks at the same wall; the
+        # plate must be cut along origin->aim, not along the camera's heading
+        aim = [4.0, 0.0, 1.1]
+        frames = self.frames([[0.0, 3.0, 1.1]] * 10, aim)
+        plates = P.segment_frames(frames, self.FOV, pano_origin=[0, 0, 1.1])
+        self.assertAlmostEqual(plates[0]["yaw_deg"], 0.0, places=1)   # origin->aim
+        self.assertNotAlmostEqual(frames[0]["pan_deg"], 0.0, places=1)  # camera heading
+
+    def test_missing_aim_falls_back_to_camera_heading(self):
+        frames = [{"frame": 1, "t": 0.0, "pan_deg": 33.0, "tilt_deg": 0.0}]
+        plates = P.segment_frames(frames, self.FOV)
+        self.assertAlmostEqual(plates[0]["yaw_deg"], 33.0, places=3)

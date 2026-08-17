@@ -227,6 +227,11 @@ def build_set_asset(world_dir, set_id, include_shell=True, display_name=None,
         # camera looks at; the offset is calibrated with `previs pano-check`.
         "pano": str(world_dir / "pano" / "base.png"),
         "pano_yaw_offset_deg": float(pano_yaw_offset_deg),
+        # Where the panorama was shot from, in the set's own coordinates. The
+        # capture point is the export's origin; after the floor lift it sits at
+        # that height above the ground. Plates are only an exact reprojection
+        # from here -- previs.pano measures the parallax cost of leaving it.
+        "pano_origin_m": [0.0, 0.0, round(lift, 4)],
         "_source": {
             "world": str(world_dir),
             "metric_scale": room.get("metric_scale"),

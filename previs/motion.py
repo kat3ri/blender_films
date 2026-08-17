@@ -356,13 +356,17 @@ def build_tracks(shot, library):
 
 
 class CameraKey:
-    __slots__ = ("frame", "t", "position", "rotation_euler")
+    __slots__ = ("frame", "t", "position", "rotation_euler", "aim")
 
-    def __init__(self, frame, t, position, rotation_euler):
+    def __init__(self, frame, t, position, rotation_euler, aim=None):
         self.frame = frame
         self.t = t
         self.position = position
         self.rotation_euler = rotation_euler
+        # What the camera is pointed AT, not just which way. Needed to cut a
+        # background plate from the pano's capture point rather than from the
+        # camera's own heading, and to size the parallax between the two.
+        self.aim = aim
 
 
 def _aim_point(shot, move, tracks, library, t, fallback, camera_position=None):
@@ -576,7 +580,7 @@ def build_camera_keys(shot, tracks, library, fps=None):
                 rotation[2] += 2.0 * math.pi
         previous_rot_z = rotation[2]
 
-        keys.append(CameraKey(frame_index + 1, t, position, rotation))
+        keys.append(CameraKey(frame_index + 1, t, position, rotation, aim))
 
     smoothing_s = max(0.0, float((camera or {}).get("smoothing_s", 0.0)))
     if smoothing_s > 1e-6:
@@ -636,7 +640,7 @@ def _smooth_camera_keys(keys, fps, smoothing_s):
                 for k in range(3)
             ]
             rot = [((a + math.pi) % (2.0 * math.pi)) - math.pi for a in rot]
-            smoothed[i] = CameraKey(key.frame, key.t, pos, rot)
+            smoothed[i] = CameraKey(key.frame, key.t, pos, rot, key.aim)
     return smoothed
 
 

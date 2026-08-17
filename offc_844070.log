@@ -1,0 +1,284 @@
+13:06:03 | INFO: Data are loaded, start creating Blender stuff
+13:06:03 | INFO: Blender create Mesh node geometry_0
+13:06:03 | INFO: glTF import finished in 0.02s
+13:06:03 | INFO: Data are loaded, start creating Blender stuff
+13:06:03 | INFO: Blender create Mesh node geometry_0
+13:06:03 | INFO: glTF import finished in 0.02s
+13:06:04 | INFO: Data are loaded, start creating Blender stuff
+13:06:04 | INFO: Blender create Mesh node geometry_0
+13:06:04 | INFO: glTF import finished in 0.02s
+13:06:04 | INFO: Data are loaded, start creating Blender stuff
+13:06:04 | INFO: Blender create Mesh node geometry_0
+13:06:04 | INFO: glTF import finished in 0.02s
+13:06:05 | INFO: Data are loaded, start creating Blender stuff
+13:06:05 | INFO: Blender create Mesh node geometry_0
+13:06:05 | INFO: glTF import finished in 0.03s
+13:06:05 | INFO: Data are loaded, start creating Blender stuff
+13:06:05 | INFO: Blender create Mesh node geometry_0
+13:06:05 | INFO: glTF import finished in 0.21s
+13:06:05 | INFO: Data are loaded, start creating Blender stuff
+13:06:05 | INFO: Blender create Mesh node geometry_0
+13:06:05 | INFO: glTF import finished in 0.16s
+13:06:05 | INFO: Data are loaded, start creating Blender stuff
+13:06:05 | INFO: Blender create Mesh node geometry_0
+13:06:06 | INFO: glTF import finished in 0.33s
+13:06:06 | INFO: Data are loaded, start creating Blender stuff
+13:06:06 | INFO: Blender create Mesh node geometry_0
+13:06:07 | INFO: glTF import finished in 0.93s
+13:06:07 | INFO: Data are loaded, start creating Blender stuff
+13:06:07 | INFO: Blender create Mesh node geometry_0
+13:06:07 | INFO: glTF import finished in 0.02s
+13:06:07 | INFO: Data are loaded, start creating Blender stuff
+13:06:07 | INFO: Blender create Mesh node geometry_0
+13:06:07 | INFO: glTF import finished in 0.03s
+13:06:07 | INFO: Data are loaded, start creating Blender stuff
+13:06:07 | INFO: Blender create Mesh node geometry_0
+13:06:07 | INFO: glTF import finished in 0.02s
+13:06:08 | INFO: Data are loaded, start creating Blender stuff
+13:06:08 | INFO: Blender create Mesh node geometry_0
+13:06:08 | INFO: glTF import finished in 0.02s
+13:06:08 | INFO: Data are loaded, start creating Blender stuff
+13:06:08 | INFO: Blender create Mesh node geometry_0
+13:06:08 | INFO: glTF import finished in 0.03s
+13:06:08 | INFO: Data are loaded, start creating Blender stuff
+13:06:08 | INFO: Blender create Mesh node geometry_0
+13:06:09 | INFO: glTF import finished in 0.02s
+13:06:09 | INFO: Data are loaded, start creating Blender stuff
+13:06:09 | INFO: Blender create Mesh node geometry_0
+13:06:09 | INFO: glTF import finished in 0.03s
+13:06:09 | INFO: Data are loaded, start creating Blender stuff
+13:06:09 | INFO: Blender create Mesh node geometry_0
+13:06:09 | INFO: glTF import finished in 0.04s
+13:06:10 | INFO: Data are loaded, start creating Blender stuff
+13:06:10 | INFO: Blender create Mesh node geometry_0
+13:06:11 | INFO: glTF import finished in 0.89s
+libEGL warning: failed to open /dev/dri/renderD135: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD134: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD133: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD132: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD131: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD130: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD129: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD128: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD135: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD134: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD133: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD132: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD131: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD130: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD129: Permission denied
+
+libEGL warning: failed to open /dev/dri/renderD128: Permission denied
+
+libEGL warning: failed to open /dev/dri/card8: Permission denied
+
+libEGL warning: failed to open /dev/dri/card7: Permission denied
+
+libEGL warning: failed to open /dev/dri/card6: Permission denied
+
+libEGL warning: failed to open /dev/dri/card5: Permission denied
+
+libEGL warning: failed to open /dev/dri/card4: Permission denied
+
+libEGL warning: failed to open /dev/dri/card3: Permission denied
+
+libEGL warning: failed to open /dev/dri/card2: Permission denied
+
+libEGL warning: failed to open /dev/dri/card1: Permission denied
+
+EGL Error (0x3009): EGL_BAD_MATCH: Arguments are inconsistent (for example, a valid context requires buffers not supplied by a valid surface).
+Blender 4.2.0 (hash a51f293548ad built 2024-07-16 06:27:02)
+Append frame 1
+Time: 00:10.61 (Saving: 00:00.12)
+
+Append frame 2
+Time: 00:06.67 (Saving: 00:00.04)
+
+Append frame 3
+Time: 00:06.06 (Saving: 00:00.04)
+
+Append frame 4
+Time: 00:05.92 (Saving: 00:00.04)
+
+Append frame 5
+Time: 00:05.74 (Saving: 00:00.04)
+
+Append frame 6
+Time: 00:05.91 (Saving: 00:00.04)
+
+Append frame 7
+Time: 00:05.78 (Saving: 00:00.04)
+
+Append frame 8
+Time: 00:05.89 (Saving: 00:00.04)
+
+Append frame 9
+Time: 00:06.05 (Saving: 00:00.04)
+
+Append frame 10
+Time: 00:06.22 (Saving: 00:00.04)
+
+Append frame 11
+Time: 00:05.94 (Saving: 00:00.04)
+
+Append frame 12
+Time: 00:05.90 (Saving: 00:00.04)
+
+Append frame 13
+Time: 00:04.98 (Saving: 00:00.04)
+
+Append frame 14
+Time: 00:04.97 (Saving: 00:00.04)
+
+Append frame 15
+Time: 00:04.86 (Saving: 00:00.04)
+
+Append frame 16
+Time: 00:04.72 (Saving: 00:00.04)
+
+Append frame 17
+Time: 00:05.03 (Saving: 00:00.04)
+
+Append frame 18
+Time: 00:05.03 (Saving: 00:00.04)
+
+Append frame 19
+Time: 00:04.83 (Saving: 00:00.04)
+
+Append frame 20
+Time: 00:04.70 (Saving: 00:00.04)
+
+Append frame 21
+Time: 00:04.64 (Saving: 00:00.04)
+
+Append frame 22
+Time: 00:04.67 (Saving: 00:00.04)
+
+Append frame 23
+Time: 00:04.57 (Saving: 00:00.04)
+
+Append frame 24
+Time: 00:04.51 (Saving: 00:00.04)
+
+Append frame 25
+Time: 00:04.69 (Saving: 00:00.04)
+
+Append frame 26
+Time: 00:04.76 (Saving: 00:00.04)
+
+Append frame 27
+Time: 00:04.82 (Saving: 00:00.04)
+
+Append frame 28
+Time: 00:04.49 (Saving: 00:00.04)
+
+Append frame 29
+Time: 00:04.76 (Saving: 00:00.04)
+
+Append frame 30
+Time: 00:04.76 (Saving: 00:00.04)
+
+Append frame 31
+Time: 00:04.56 (Saving: 00:00.04)
+
+Append frame 32
+Time: 00:04.76 (Saving: 00:00.05)
+
+Append frame 33
+Time: 00:04.43 (Saving: 00:00.04)
+
+Append frame 34
+Time: 00:04.35 (Saving: 00:00.04)
+
+Append frame 35
+Time: 00:04.51 (Saving: 00:00.04)
+
+Append frame 36
+Time: 00:04.33 (Saving: 00:00.04)
+
+Append frame 37
+Time: 00:04.24 (Saving: 00:00.04)
+
+Append frame 38
+Time: 00:04.27 (Saving: 00:00.04)
+
+Append frame 39
+Time: 00:04.28 (Saving: 00:00.04)
+
+Append frame 40
+Time: 00:03.99 (Saving: 00:00.04)
+
+Append frame 41
+Time: 00:03.86 (Saving: 00:00.04)
+
+Append frame 42
+Time: 00:03.93 (Saving: 00:00.04)
+
+Append frame 43
+Time: 00:03.84 (Saving: 00:00.04)
+
+Append frame 44
+Time: 00:03.90 (Saving: 00:00.04)
+
+Append frame 45
+Time: 00:03.87 (Saving: 00:00.04)
+
+Append frame 46
+Time: 00:03.75 (Saving: 00:00.04)
+
+Append frame 47
+Time: 00:03.78 (Saving: 00:00.04)
+
+Append frame 48
+Time: 00:03.74 (Saving: 00:00.04)
+
+Append frame 49
+Time: 00:03.68 (Saving: 00:00.04)
+
+Append frame 50
+Time: 00:03.63 (Saving: 00:00.04)
+
+Append frame 51
+Time: 00:03.64 (Saving: 00:00.04)
+
+Append frame 52
+Time: 00:03.71 (Saving: 00:00.04)
+
+Append frame 53
+Time: 00:03.59 (Saving: 00:00.04)
+
+Append frame 54
+Time: 00:03.68 (Saving: 00:00.04)
+
+Append frame 55
+Time: 00:03.68 (Saving: 00:00.04)
+
+Append frame 56
+Time: 00:03.62 (Saving: 00:00.04)
+
+Append frame 57
+Time: 00:03.37 (Saving: 00:00.04)
+
+Append frame 58
+Time: 00:03.37 (Saving: 00:00.04)
+
+Append frame 59
+Time: 00:03.35 (Saving: 00:00.04)
+
+Append frame 60
+Time: 00:01.95 (Saving: 00:00.04)
+

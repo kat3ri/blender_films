@@ -251,6 +251,7 @@ def build_camera_motion(shot, camera_keys, fps):
             "tilt_deg": orient["tilt_deg"],
             "roll_deg": orient["roll_deg"],
             "forward": orient["forward"],
+            "aim": [round(c, 5) for c in key.aim] if key.aim else None,
         })
 
     # A compact move summary alongside the dense per-frame track: the authored
