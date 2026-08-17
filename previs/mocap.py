@@ -29,10 +29,12 @@ DEFAULT_BVH_JOINT_MAP = {
     "rightleg": "r_knee",
     "rightfoot": "r_foot",
     # SnapMoGen skeleton (renamed_bvhs). Root is "ROOT"; joints are
-    # <side>_<segment>000N_bind_JNT. The clavicle and the extra spine/neck/toe
-    # segments carry only minor DOF and have no matching rig joint, so the
-    # primary bones map straight through: armUpper->shoulder, legUpper->hip.
-    "root": "hips",
+    # <side>_<segment>000N_bind_JNT. ROOT itself never rotates -- the skeleton
+    # forks at ROOT into a pelvis branch (legs) and a spine branch (torso) and
+    # EACH branch carries the character's whole world heading as a local
+    # rotation, so the retarget must go through world space (see
+    # retarget_frame). The pelvis is the body reference that maps to hips.
+    "c_pelvis0001_bind_jnt": "hips",
     "c_spine0001_bind_jnt": "spine",
     "c_spine0003_bind_jnt": "chest",
     "c_neck0001_bind_jnt": "neck",
@@ -120,10 +122,15 @@ def canonical_joint_map(override=None):
 #
 #     ourX <- Zsrc (forward)   ourY <- Xsrc (left)   ourZ <- Ysrc (up)
 #
-# A per-joint rotation is then converted by the similarity transform
-# R_our = P . R_src . P^T. Because both skeletons are world-aligned in rest
-# (BVH joints inherit the root's axes; our empties have identity rest), this
-# single conjugation retargets every joint correctly, left/right included.
+# Rotations cannot simply be copied joint-by-joint, because the two skeletons
+# disagree about hierarchy: SnapMoGen forks at ROOT into pelvis and spine
+# branches that each carry the whole-body heading, has clavicle/twist segments
+# our rig lacks, and the clip's heading belongs to the authored track, not the
+# clip. retarget_frame therefore transports rotations through WORLD space:
+# FK the source skeleton, strip the heading yaw, conjugate into rig axes by
+# R_our = P . R_src . P^T, then re-localise down the rig's own hierarchy.
+# convert_euler_frame keeps the bare single-joint conjugation for
+# hand-authored clips and tests.
 
 # P maps a source-axis vector to its image in rig coordinates (columns are the
 # rig-space images of source X, Y, Z).
@@ -154,8 +161,10 @@ def convert_euler_frame(xyz_deg, source_up_axis="z"):
     # Import here to keep this module import-cheap and Blender-safe.
     from . import mocap_bvh as _bvh
 
+    # Recompose in Blender's 'XYZ' Euler convention: M = Rz . Ry . Rx, the
+    # same convention _matrix_to_euler_xyz_deg decomposes with.
     matrix = _bvh._identity3()
-    for label, angle in zip(("X", "Y", "Z"), xyz_deg):
+    for label, angle in zip(("Z", "Y", "X"), reversed(xyz_deg)):
         matrix = _bvh._mul3(matrix, _bvh._axis_matrix(label, math.radians(angle)))
 
     p = _Y_UP_TO_Z_UP
@@ -170,6 +179,108 @@ def map_rotations(source_rotations, joint_map, source_up_axis="z"):
         if target:
             mapped[target] = convert_euler_frame(angles, source_up_axis)
     return mapped
+
+
+def _euler_to_matrix(xyz_deg):
+    """Blender 'XYZ' Euler to matrix: M = Rz . Ry . Rx."""
+    from . import mocap_bvh as _bvh
+
+    matrix = _bvh._identity3()
+    for label, angle in zip(("Z", "Y", "X"), reversed(list(xyz_deg))):
+        matrix = _bvh._mul3(matrix, _bvh._axis_matrix(label, math.radians(angle)))
+    return matrix
+
+
+def _source_world_rotations(clip, local_rotations):
+    """FK the source hierarchy: joint name -> world rotation matrix."""
+    from . import mocap_bvh as _bvh
+
+    world = {}
+
+    def resolve(name):
+        cached = world.get(name)
+        if cached is not None:
+            return cached
+        joint = clip.joints[name]
+        local = _euler_to_matrix(local_rotations.get(name, (0.0, 0.0, 0.0)))
+        if joint.parent is None or joint.parent not in clip.joints:
+            matrix = local
+        else:
+            matrix = _bvh._mul3(resolve(joint.parent), local)
+        world[name] = matrix
+        return matrix
+
+    for name in clip.joints:
+        resolve(name)
+    return world
+
+
+def _heading_removal(world_matrix, source_up_axis):
+    """Inverse of the body's heading yaw, as a matrix in source coordinates.
+
+    The heading is where the body FORWARD axis points, projected on the ground
+    plane: Y-up sources face +Z, the rig's own Z-up convention faces +X. The
+    clip's heading belongs to the shot's authored track, so the retarget
+    removes it and keeps only the pelvis's pitch/roll sway.
+    """
+    from . import mocap_bvh as _bvh
+
+    if source_up_axis == "y":
+        forward = [world_matrix[r][2] for r in range(3)]  # world image of +Z
+        yaw = math.atan2(forward[0], forward[2])  # about +Y
+        return _bvh._axis_matrix("Y", -yaw)
+    forward = [world_matrix[r][0] for r in range(3)]  # world image of +X
+    yaw = math.atan2(forward[1], forward[0])  # about +Z
+    return _bvh._axis_matrix("Z", -yaw)
+
+
+def retarget_frame(clip, local_rotations, joint_map, source_up_axis="y"):
+    """Retarget one sampled frame onto the rig: rig joint -> XYZ Euler (deg).
+
+    World-rotation transport: FK the source skeleton, strip the body heading
+    (measured at the joint mapped to ``hips``), rotate into rig axes, then
+    re-localise each mapped joint against its nearest mapped ancestor in the
+    RIG hierarchy. Source joints with no rig counterpart (pelvis, clavicles,
+    twist segments) contribute through their children's world rotations
+    instead of being dropped.
+    """
+    from . import mocap_bvh as _bvh
+    from . import rig as _rig
+
+    axis = (source_up_axis or "z").lower()
+    source_world = _source_world_rotations(clip, local_rotations)
+
+    # source joint feeding each rig joint (first match wins, map order).
+    rig_sources = {}
+    lowered = {name.lower(): name for name in clip.joints}
+    for source_lower, target in joint_map.items():
+        if target not in rig_sources and source_lower in lowered:
+            rig_sources[target] = lowered[source_lower]
+
+    hips_source = rig_sources.get("hips")
+    if hips_source is None:
+        return {}
+    strip = _heading_removal(source_world[hips_source], axis)
+
+    p = _Y_UP_TO_Z_UP if axis == "y" else _bvh._identity3()
+    p_t = _transpose3(p)
+
+    rig_world = {}
+    for rig_joint, source_joint in rig_sources.items():
+        stripped = _bvh._mul3(strip, source_world[source_joint])
+        rig_world[rig_joint] = _bvh._mul3(_bvh._mul3(p, stripped), p_t)
+
+    locals_out = {}
+    for rig_joint, world_matrix in rig_world.items():
+        parent = _rig.JOINTS.get(rig_joint, {}).get("parent")
+        while parent is not None and parent not in rig_world:
+            parent = _rig.JOINTS.get(parent, {}).get("parent")
+        if parent is None:
+            local = world_matrix
+        else:
+            local = _bvh._mul3(_transpose3(rig_world[parent]), world_matrix)
+        locals_out[rig_joint] = _bvh._matrix_to_euler_xyz_deg(local)
+    return locals_out
 
 
 def clip_time_for_segment(segment, t_s, clip_duration_s):

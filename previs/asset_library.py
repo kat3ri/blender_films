@@ -47,7 +47,11 @@ For a curved surface (crenellations on a round tower), use radial mode
 instead of a straight-line axis::
 
     {"shape": "box", "position": [cx, cy, z], "size": [0.4, 0.4, 0.3],
-     "repeat": {"mode": "radial", "count": 10, "radius": 2.2}}
+     "repeat": {"mode": "radial", "count": 10, "radius": 2.2,
+                "face_outward": true}}
+
+``face_outward`` also yaws each copy to the circle's tangent, so merlons read
+as merlons rather than as boxes sitting on a curve.
 """
 
 from __future__ import annotations
@@ -149,11 +153,12 @@ def _repeat_positions(position, repeat):
     Z held constant) — for crenellations on a round tower, rivets on a
     cylinder, anything a straight-line ``repeat`` can't reach because the
     surface it sits on is curved. ``start_deg``/``end_deg`` default to a full
-    0-360 sweep; each copy is only repositioned, not rotated to face outward
-    -- crude, matching everything else in this proxy system, and plenty for a
-    control video's silhouette. No per-copy rotation is the one thing this
-    can't do; if a future shot needs merlons that actually face outward,
-    that's the next thing to add here, not a reason to hand-place them.
+    0-360 sweep.
+
+    Set ``"face_outward": true`` to also yaw each copy to the tangent of the
+    circle, so merlons on a round tower read as merlons rather than as boxes
+    that happen to sit on a curve. Returns ``(position, yaw_deg)`` pairs;
+    yaw is 0 for linear repeats and for radial repeats without the flag.
     """
     base = list(position)
     if len(base) == 2:
@@ -166,23 +171,28 @@ def _repeat_positions(position, repeat):
         end_deg = float(repeat.get("end_deg", 360.0))
         full_circle = abs((end_deg - start_deg) % 360.0) < 1e-6
         steps = count if full_circle else max(1, count - 1)
-        positions = []
+        face_outward = bool(repeat.get("face_outward", False))
+        placements = []
         for i in range(count):
-            angle = math.radians(start_deg + (end_deg - start_deg) * (i / steps))
-            positions.append(
-                [base[0] + radius * math.cos(angle), base[1] + radius * math.sin(angle), base[2]]
-            )
-        return positions
+            deg = start_deg + (end_deg - start_deg) * (i / steps)
+            angle = math.radians(deg)
+            placements.append((
+                [base[0] + radius * math.cos(angle),
+                 base[1] + radius * math.sin(angle),
+                 base[2]],
+                deg if face_outward else 0.0,
+            ))
+        return placements
 
     axis = _REPEAT_AXES[repeat.get("axis", "x")]
     spacing = float(repeat.get("spacing", 0.3))
     start = base[axis] - spacing * (count - 1) / 2.0
-    positions = []
+    placements = []
     for i in range(count):
         copy = list(base)
         copy[axis] = start + i * spacing
-        positions.append(copy)
-    return positions
+        placements.append((copy, 0.0))
+    return placements
 
 
 def _expand_part_repeats(parts):
@@ -192,9 +202,15 @@ def _expand_part_repeats(parts):
         if not repeat:
             expanded.append(part)
             continue
-        for position in _repeat_positions(part.get("position", [0, 0, 0]), repeat):
+        for position, yaw_deg in _repeat_positions(part.get("position", [0, 0, 0]), repeat):
             copy = {k: v for k, v in part.items() if k != "repeat"}
             copy["position"] = position
+            if yaw_deg:
+                rot = list(copy.get("rotation_deg", [0.0, 0.0, 0.0]))
+                while len(rot) < 3:
+                    rot.append(0.0)
+                rot[2] += yaw_deg
+                copy["rotation_deg"] = rot
             expanded.append(copy)
     return expanded
 
@@ -230,12 +246,16 @@ def expand_fixtures(shot, library):
             # un-suffixed base id is never itself added to `existing` below.
             if f"{fixture['id']}_0" in existing:
                 continue
-            for index, position in enumerate(
+            for index, (position, yaw_deg) in enumerate(
                 _repeat_positions(fixture.get("position", [0, 0, 0]), repeat)
             ):
                 copy = {k: v for k, v in fixture.items() if k != "repeat"}
                 copy["id"] = f"{fixture['id']}_{index}"
                 copy["position"] = position
+                if yaw_deg:
+                    # fixtures are props: their orientation is facing_deg, not
+                    # the part-level rotation_deg used inside an asset
+                    copy["facing_deg"] = float(copy.get("facing_deg", 0.0)) + yaw_deg
                 copy["_from_set"] = set_asset_id
                 props.append(copy)
                 existing.add(copy["id"])

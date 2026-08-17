@@ -343,6 +343,11 @@ that have left the stage (which renders as the back of a wall).
 
 ## Not built yet
 
-Multiple blocking candidates per shot (A/B/C variants), rigged character
-animation, sourcing real geometry for clay blockouts, and any hookup to the
-generative video model itself. The schema leaves room for all of them.
+Multiple blocking candidates per shot (A/B/C variants). The schema leaves room
+for it.
+
+Submission to the video model is deliberately *not* here: a bundle is handed to
+the shot orchestrator, which composes the full scene prompt and owns the
+generation call. [`docs/BUNDLE_CONTRACT.md`](docs/BUNDLE_CONTRACT.md) is that
+interface — read `bundle_manifest.json` and everything else is reachable from
+it.

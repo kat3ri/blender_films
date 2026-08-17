@@ -40,6 +40,9 @@ CAMERA_MOVE_TYPES = {
     "orbit": ("radius_m",),
     "pan": ("position", "start_deg", "end_deg"),
     "tilt": ("position", "start_deg", "end_deg"),
+    # Named framing preset -- expanded into one of the above by
+    # previs.framing.expand_presets before anything else sees it.
+    "preset": ("name", "subject_id"),
 }
 
 POSES = ("stand", "crouch", "kneel", "sit", "reach")

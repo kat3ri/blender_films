@@ -6,11 +6,13 @@ so this is mostly dispatch and bookkeeping. Runs inside Blender.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from . import blender_api as api
 from . import rig
 from .asset_library import AssetLibrary, expand_fixtures
+from .framing import expand_presets
 from .motion import build_camera_keys, build_tracks, check_camera_bounds, pad3
 
 
@@ -65,6 +67,11 @@ def _assemble_scene(shot, assets_root=None, verbose=True):
             obj = api.place_character(character["id"], asset, start_position, start_facing)
             api.animate_character(obj, track, fps)
 
+    # Framing presets resolve against where the subjects actually stand, so
+    # they expand after tracks exist and before any camera maths runs. Every
+    # stage downstream sees ordinary move dicts.
+    n_presets = expand_presets(shot, tracks, library)
+
     camera_spec = shot.get("camera") or {}
     camera = api.create_camera(float(camera_spec.get("lens_mm", 35.0)))
     camera_keys = build_camera_keys(shot, tracks, library, fps)
@@ -74,7 +81,7 @@ def _assemble_scene(shot, assets_root=None, verbose=True):
     api.configure_render(
         scene,
         engine=render_settings.get("engine", "WORKBENCH"),
-        resolution=render_settings.get("resolution", [960, 540]),
+        resolution=render_settings.get("resolution", [960, 544]),
         fps=fps,
     )
 
@@ -85,7 +92,10 @@ def _assemble_scene(shot, assets_root=None, verbose=True):
         print(f"[previs] characters  {[c.get('id') for c in shot.get('characters', [])]}"
               + (f"  (articulated: {list(rigged)})" if rigged else ""))
         print(f"[previs] props       {[p.get('id') for p in shot.get('props', [])]}")
-        print(f"[previs] camera      {[m.get('type') for m in camera_spec.get('moves', [])]}")
+        moves_desc = [m.get("_preset") or m.get("type")
+                      for m in camera_spec.get("moves", [])]
+        print(f"[previs] camera      {moves_desc}"
+              + (f"  ({n_presets} preset(s) expanded)" if n_presets else ""))
         for kind, asset_id in library.missing:
             print(f"[previs] WARNING     no {kind[:-1]} asset {asset_id!r}; using placeholder")
         for warning in warnings:
@@ -223,6 +233,17 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
         if verbose:
             print(f"[previs] bundle      pose_landmarks ({len(ctx['rigged'])} figure(s))")
 
+        # Pre-flight: the pose data already knows whether anyone left frame.
+        # Say so here, where it is still cheap to re-block, rather than after
+        # a generation comes back wrong.
+        quality = bundle_mod.build_quality_report(
+            pose, metadata.get("target_constraints"))
+        bundle_mod._dump(out_dir / "quality_report.json", quality)
+        entries["quality_report"] = "quality_report.json"
+        if verbose:
+            for warning in quality["warnings"]:
+                print(f"[previs] WARNING     {warning}")
+
     # Stills at each camera-mark boundary plus first and last.
     if with_stills:
         mark_times = {0.0, ctx["duration"]}
@@ -237,6 +258,7 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
             entries["stills"] = "stills/"
             if verbose:
                 print(f"[previs] bundle      {len(stills)} still(s) -> stills/")
+
 
     # Depth pass last: it swaps the engine and compositor, so run it after
     # everything that depends on the reference render setup.
@@ -253,11 +275,30 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
             if verbose:
                 print(f"[previs] WARNING     depth pass failed: {exc}")
 
+    # Top-down staging diagram LAST: it builds a fresh scene (draw_* geometry
+    # would otherwise pollute the reference render), which invalidates the
+    # scene every render step above still needs. Verified the hard way --
+    # running it before the depth pass killed depth with
+    # "StructRNA of type Scene has been removed".
+    if with_stills:
+        try:
+            diagram = out_dir / "stills" / "blocking_diagram.png"
+            compile_camera_path(json.loads(json.dumps(shot)), diagram,
+                                assets_root=assets_root, verbose=False,
+                                mode="top", with_tracks=True)
+            entries["blocking_diagram"] = "stills/blocking_diagram.png"
+            if verbose:
+                print(f"[previs] bundle      blocking_diagram -> stills/")
+        except Exception as exc:  # diagnostic art; never fail the bundle on it
+            if verbose:
+                print(f"[previs] WARNING     blocking diagram failed: {exc}")
+
     bundle_mod.write_readme(out_dir, shot, entries)
     entries["readme"] = "README.txt"
     manifest = bundle_mod.write_manifest(
         out_dir, shot, entries, fps,
-        extra={"generators": list(generators), "warnings": ctx["warnings"]},
+        extra={"generators": list(generators), "warnings": ctx["warnings"],
+               "target_constraints": metadata.get("target_constraints", {})},
     )
     if verbose:
         print(f"[previs] bundle      manifest -> bundle_manifest.json "
@@ -266,7 +307,8 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
 
 
 
-def compile_camera_path(shot, output_path, assets_root=None, verbose=True, mode="angle"):
+def compile_camera_path(shot, output_path, assets_root=None, verbose=True,
+                        mode="angle", with_tracks=False):
     """Build the scene (set, props, characters posed but not animated) and
     render it from a static *external* camera with the shot's actual computed
     camera trajectory drawn as a visible trail — green start, red end,
@@ -317,9 +359,23 @@ def compile_camera_path(shot, output_path, assets_root=None, verbose=True, mode=
         else:
             api.place_character(character["id"], asset, start_position, start_facing)
 
+    expand_presets(shot, tracks, library)
     camera_keys = build_camera_keys(shot, tracks, library, fps)
     warnings = check_camera_bounds(camera_keys, stage)
     api.draw_camera_path(camera_keys)
+
+    # Character trails: blue->magenta, so they never read as the camera's
+    # green->red. This is what turns a camera-path view into a staging diagram.
+    if with_tracks:
+        steps = max(2, int(round(duration * fps)))
+        for index, (char_id, track) in enumerate(sorted(tracks.items())):
+            positions = [track.sample(duration * i / (steps - 1))[0]
+                         for i in range(steps)]
+            tint = 0.35 + 0.25 * (index % 3)
+            api.draw_motion_trail(
+                positions, (0.15, 0.35, 0.95), (0.95, 0.20, tint),
+                prefix=f"track_{char_id}",
+            )
 
     set_extent = []
     if set_spec.get("asset_id"):
@@ -331,7 +387,7 @@ def compile_camera_path(shot, output_path, assets_root=None, verbose=True, mode=
     api.configure_render(
         scene,
         engine="WORKBENCH",
-        resolution=render_settings.get("resolution", [960, 540]),
+        resolution=render_settings.get("resolution", [960, 544]),
         fps=fps,
     )
 

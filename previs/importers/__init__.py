@@ -87,7 +87,7 @@ def make_stub(
         "characters": list(characters),
         "props": [],
         "camera": {"lens_mm": 35, "moves": [], "_source_text": list(camera_source_text)},
-        "render": {"engine": "WORKBENCH", "resolution": [960, 540], "fps": fps},
+        "render": {"engine": "WORKBENCH", "resolution": [960, 544], "fps": fps},
         "notes": notes,
     }
 

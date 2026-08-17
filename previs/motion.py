@@ -86,9 +86,9 @@ class Track:
     def __init__(self, object_id, keys, mocap_segments=None):
         self.object_id = object_id
         self.keys = keys  # each: {"t", "position", "facing_deg", "pose"}
-        # Optional metadata used by rig animation backends that can consume
-        # mocap clips. Phase 1 records the intent here without changing the
-        # existing procedural motion output.
+        # Mocap directives for rig backends that can consume them. The
+        # procedural track stays authoritative for position/facing; root
+        # motion from the clip is applied downstream (blender_api._apply_root_mode).
         self.mocap_segments = list(mocap_segments or [])
         # Cumulative ground distance at each key. The gait cycle is a function
         # of distance rather than time, so stride always matches ground covered
@@ -268,7 +268,8 @@ def build_character_track(character, resolve_point, duration):
             facing, pose = new_facing, next_pose
 
         elif action_type == "mocap_clip":
-            # Phase 1: store clip directives while preserving current root motion.
+            # Store the clip directive; root handling is chosen per-segment
+            # by root_mode (lock_xy / from_clip / blend) at apply time.
             mocap_segments.append(
                 {
                     "start_t": start_t,
@@ -303,9 +304,15 @@ def build_character_track(character, resolve_point, duration):
                     "joint_map": dict(action.get("joint_map") or {}),
                 }
             )
-            _append_key(keys, start_t, position, facing, next_pose)
-            _append_key(keys, end_t, position, facing, next_pose)
-            pose = next_pose
+            # A clip riding on top of another action (walk_to + mocap_clip
+            # over the same span) is a limb overlay only: appending root keys
+            # here would land them *after* the walk's later keys and corrupt
+            # the sorted-by-time invariant sample()/pose_at() rely on. Only
+            # hold the root when the clip is the current action.
+            if start_t >= keys[-1]["t"] - EPS:
+                _append_key(keys, start_t, position, facing, next_pose)
+                _append_key(keys, end_t, position, facing, next_pose)
+                pose = next_pose
 
         else:  # idle
             _append_key(keys, start_t, position, facing, next_pose)
@@ -355,13 +362,17 @@ def build_tracks(shot, library):
 
 
 class CameraKey:
-    __slots__ = ("frame", "t", "position", "rotation_euler")
+    __slots__ = ("frame", "t", "position", "rotation_euler", "aim")
 
-    def __init__(self, frame, t, position, rotation_euler):
+    def __init__(self, frame, t, position, rotation_euler, aim=None):
         self.frame = frame
         self.t = t
         self.position = position
         self.rotation_euler = rotation_euler
+        # What the camera is pointed AT, not just which way. Needed to cut a
+        # background plate from the pano's capture point rather than from the
+        # camera's own heading, and to size the parallax between the two.
+        self.aim = aim
 
 
 def _aim_point(shot, move, tracks, library, t, fallback, camera_position=None):
@@ -555,6 +566,18 @@ def build_camera_keys(shot, tracks, library, fps=None):
         position, aim = _eval_move(shot, active, tracks, library, t_eval, stage_centre)
         rotation = look_at_euler(position, aim)
 
+        # Roll is the one orientation a look-at cannot imply: it is a framing
+        # choice, not a consequence of where the camera points. Only the dutch
+        # preset sets it today; a move may ramp it in over its own span.
+        roll_deg = float(active.get("roll_deg", 0.0))
+        if roll_deg:
+            span = float(active["end_t"]) - float(active["start_t"])
+            ramp = float(active.get("roll_ramp_s", 0.0))
+            weight = 1.0
+            if ramp > 1e-6 and span > 1e-6:
+                weight = min(1.0, max(0.0, (t_eval - float(active["start_t"])) / ramp))
+            rotation[1] = math.radians(roll_deg) * weight
+
         # Keep yaw continuous so a wrap past +/-pi doesn't spin the camera.
         if previous_rot_z is not None:
             while rotation[2] - previous_rot_z > math.pi:
@@ -563,7 +586,7 @@ def build_camera_keys(shot, tracks, library, fps=None):
                 rotation[2] += 2.0 * math.pi
         previous_rot_z = rotation[2]
 
-        keys.append(CameraKey(frame_index + 1, t, position, rotation))
+        keys.append(CameraKey(frame_index + 1, t, position, rotation, aim))
 
     smoothing_s = max(0.0, float((camera or {}).get("smoothing_s", 0.0)))
     if smoothing_s > 1e-6:
@@ -623,7 +646,7 @@ def _smooth_camera_keys(keys, fps, smoothing_s):
                 for k in range(3)
             ]
             rot = [((a + math.pi) % (2.0 * math.pi)) - math.pi for a in rot]
-            smoothed[i] = CameraKey(key.frame, key.t, pos, rot)
+            smoothed[i] = CameraKey(key.frame, key.t, pos, rot, key.aim)
     return smoothed
 
 
