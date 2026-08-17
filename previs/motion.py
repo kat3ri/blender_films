@@ -304,9 +304,15 @@ def build_character_track(character, resolve_point, duration):
                     "joint_map": dict(action.get("joint_map") or {}),
                 }
             )
-            _append_key(keys, start_t, position, facing, next_pose)
-            _append_key(keys, end_t, position, facing, next_pose)
-            pose = next_pose
+            # A clip riding on top of another action (walk_to + mocap_clip
+            # over the same span) is a limb overlay only: appending root keys
+            # here would land them *after* the walk's later keys and corrupt
+            # the sorted-by-time invariant sample()/pose_at() rely on. Only
+            # hold the root when the clip is the current action.
+            if start_t >= keys[-1]["t"] - EPS:
+                _append_key(keys, start_t, position, facing, next_pose)
+                _append_key(keys, end_t, position, facing, next_pose)
+                pose = next_pose
 
         else:  # idle
             _append_key(keys, start_t, position, facing, next_pose)
