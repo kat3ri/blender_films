@@ -126,12 +126,21 @@ at the pool table's computed bearing (dead centre).
 |---|---|
 | End-to-end through H3 (locked/pan, camera at pano origin) | **PASSED** — user reports "perfect" |
 | 1. Off-centre camera path | instrumentation **done**; first run measured **45°** parallax — see §6 |
-| 2. Walk an actor through it | not started |
+| 2. Walk an actor through it | blockout **rendered clean** (`LOUNGE_WALK01`, SnapMoGen limb overlay, plate parallax 0.08°, no pre-flight warnings) — awaiting H3 |
 | 3. More complex camera | not started |
 
-Test 2 will be the first run where cast `<Picture N>` numbering shares the
-9-slot budget with plates, and the first exercise of `quality_report.json`'s
-offscreen pre-flight. It is slow: pose capture steps every frame per character.
+Test 2's blockout exercised both firsts: cast + plate share the `<Picture N>`
+budget correctly (Mauryl = Picture 1, plate = Picture 2) and the offscreen
+pre-flight caught a real framing error (walk path spanned ±35° of bearing
+against a 35 mm lens's ±27° FOV; fixed with 28 mm + a ±28° path).
+
+**SnapMoGen is now local**: `/weka/home-kateriw/previs_mocap_cache/SnapMoGen/`
+(9,155 BVHs + captions; `~/previs_mocap_cache` symlinks there, so the default
+cache root resolves). `mocap-search` → `mocap-fetch` → paste the printed
+`mocap_clip` action. A clip overlapping a `walk_to` is a **limb overlay**
+(root stays on the authored path, `root_mode: lock_xy`); commit `0e7017c`
+fixed the out-of-order root keys that pattern used to inject. The 13 GB
+`renamed_feats.zip` (training features previs never reads) was not kept.
 
 ---
 
