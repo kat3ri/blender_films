@@ -126,13 +126,21 @@ at the pool table's computed bearing (dead centre).
 |---|---|
 | End-to-end through H3 (locked/pan, camera at pano origin) | **PASSED** — user reports "perfect" |
 | 1. Off-centre camera path | instrumentation **done**; first run measured **45°** parallax — see §6 |
-| 2. Walk an actor through it | blockout **rendered clean** (`LOUNGE_WALK01`, SnapMoGen limb overlay, plate parallax 0.08°, no pre-flight warnings) — awaiting H3 |
+| 2. Walk an actor through it | **PASSED** — `LOUNGE_WALK01` (SnapMoGen limb overlay, plate 0.08°) through H3; two-stage recipe below |
 | 3. More complex camera | not started |
 
 Test 2's blockout exercised both firsts: cast + plate share the `<Picture N>`
 budget correctly (Mauryl = Picture 1, plate = Picture 2) and the offscreen
 pre-flight caught a real framing error (walk path spanned ±35° of bearing
 against a 35 mm lens's ±27° FOV; fixed with 28 mm + a ±28° path).
+
+**Actor recipe (validated on H3, 2026-08-17)**: stage 1 with `<Video 1>` guide
++ cast + plate as usual; stage 2 **resample at higher denoise with the same
+character and plate but the ref video removed**. The first pass bakes staging,
+timing and screen geography into the latent; the guide-free resample lets H3
+re-time the limbs at human dynamics, killing the video-game-character feel.
+Mocap quality only needs to be "good enough" — direction and timing, not
+polish.
 
 **SnapMoGen is now local**: `/weka/home-kateriw/previs_mocap_cache/SnapMoGen/`
 (9,155 BVHs + captions; `~/previs_mocap_cache` symlinks there, so the default
