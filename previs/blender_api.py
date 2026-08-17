@@ -1179,3 +1179,65 @@ def add_observer_camera(focus_points, lens_mm=24.0, mode="angle"):
     camera.rotation_euler = Euler(tuple(look_at_euler(list(camera.location), aim)), "XYZ")
     bpy.context.scene.camera = camera
     return camera
+
+
+def draw_motion_trail(positions, color_start, color_end, prefix,
+                      marker_size=0.16, sample_every=2):
+    """A visible trail through ``positions`` — the character equivalent of
+    :func:`draw_camera_path`.
+
+    Deliberately a sibling rather than a refactor of that function: it is
+    proven Blender-side code that cannot be exercised by the host-side test
+    suite, so it is left untouched. The two differ in what they mark anyway —
+    a camera path cares about move boundaries, a character trail about where
+    someone stood.
+    """
+    if not positions:
+        return []
+
+    sampled = list(positions[::sample_every])
+    if sampled[-1] is not positions[-1]:
+        sampled.append(positions[-1])
+
+    objects = []
+    for index, position in enumerate(sampled):
+        u = index / max(1, len(sampled) - 1)
+        color = _lerp3(color_start, color_end, u)
+        mesh = bpy.data.meshes.new(f"{prefix}_dot{index}_mesh")
+        bm = bmesh.new()
+        bmesh.ops.create_uvsphere(
+            bm, u_segments=6, v_segments=4, radius=marker_size / 2.0,
+            matrix=Matrix.Translation(position),
+        )
+        bm.to_mesh(mesh)
+        bm.free()
+        obj = bpy.data.objects.new(f"{prefix}_dot{index}", mesh)
+        obj.color = (color[0], color[1], color[2], 1.0)
+        mesh.materials.append(_flat_material(f"{prefix}_dot{index}_mat", color))
+        bpy.context.collection.objects.link(obj)
+        objects.append(obj)
+
+        if index > 0:
+            start, end = sampled[index - 1], position
+            length = math.dist(start, end)
+            if length > 1e-4:
+                mid = _lerp3(start, end, 0.5)
+                seg_mesh = bpy.data.meshes.new(f"{prefix}_seg{index}_mesh")
+                bm = bmesh.new()
+                bmesh.ops.create_cube(
+                    bm, size=1.0,
+                    matrix=Matrix.Translation(mid) @ _direction_to_euler(
+                        [end[i] - start[i] for i in range(3)]
+                    ).to_matrix().to_4x4() @ Matrix.Diagonal(
+                        (marker_size * 0.3, marker_size * 0.3, length, 1.0)
+                    ),
+                )
+                bm.to_mesh(seg_mesh)
+                bm.free()
+                seg = bpy.data.objects.new(f"{prefix}_seg{index}", seg_mesh)
+                seg.color = (color[0], color[1], color[2], 1.0)
+                seg_mesh.materials.append(_flat_material(f"{prefix}_seg{index}_mat", color))
+                bpy.context.collection.objects.link(seg)
+                objects.append(seg)
+
+    return objects

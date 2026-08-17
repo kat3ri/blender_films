@@ -6,6 +6,7 @@ so this is mostly dispatch and bookkeeping. Runs inside Blender.
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 from . import blender_api as api
@@ -232,6 +233,17 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
         if verbose:
             print(f"[previs] bundle      pose_landmarks ({len(ctx['rigged'])} figure(s))")
 
+        # Pre-flight: the pose data already knows whether anyone left frame.
+        # Say so here, where it is still cheap to re-block, rather than after
+        # a generation comes back wrong.
+        quality = bundle_mod.build_quality_report(
+            pose, metadata.get("target_constraints"))
+        bundle_mod._dump(out_dir / "quality_report.json", quality)
+        entries["quality_report"] = "quality_report.json"
+        if verbose:
+            for warning in quality["warnings"]:
+                print(f"[previs] WARNING     {warning}")
+
     # Stills at each camera-mark boundary plus first and last.
     if with_stills:
         mark_times = {0.0, ctx["duration"]}
@@ -246,6 +258,23 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
             entries["stills"] = "stills/"
             if verbose:
                 print(f"[previs] bundle      {len(stills)} still(s) -> stills/")
+
+        # Top-down staging diagram: camera path (green->red) plus every
+        # character's trail (blue->magenta), from outside the shot. The bundle
+        # README has promised this since the format was defined; it is built
+        # from a fresh scene because draw_* geometry would otherwise pollute
+        # the reference render.
+        try:
+            diagram = out_dir / "stills" / "blocking_diagram.png"
+            compile_camera_path(json.loads(json.dumps(shot)), diagram,
+                                assets_root=assets_root, verbose=False,
+                                mode="top", with_tracks=True)
+            entries["blocking_diagram"] = "stills/blocking_diagram.png"
+            if verbose:
+                print(f"[previs] bundle      blocking_diagram -> stills/")
+        except Exception as exc:  # diagnostic art; never fail the bundle on it
+            if verbose:
+                print(f"[previs] WARNING     blocking diagram failed: {exc}")
 
     # Depth pass last: it swaps the engine and compositor, so run it after
     # everything that depends on the reference render setup.
@@ -276,7 +305,8 @@ def compile_bundle(shot, out_dir, assets_root=None, verbose=True,
 
 
 
-def compile_camera_path(shot, output_path, assets_root=None, verbose=True, mode="angle"):
+def compile_camera_path(shot, output_path, assets_root=None, verbose=True,
+                        mode="angle", with_tracks=False):
     """Build the scene (set, props, characters posed but not animated) and
     render it from a static *external* camera with the shot's actual computed
     camera trajectory drawn as a visible trail — green start, red end,
@@ -327,9 +357,23 @@ def compile_camera_path(shot, output_path, assets_root=None, verbose=True, mode=
         else:
             api.place_character(character["id"], asset, start_position, start_facing)
 
+    expand_presets(shot, tracks, library)
     camera_keys = build_camera_keys(shot, tracks, library, fps)
     warnings = check_camera_bounds(camera_keys, stage)
     api.draw_camera_path(camera_keys)
+
+    # Character trails: blue->magenta, so they never read as the camera's
+    # green->red. This is what turns a camera-path view into a staging diagram.
+    if with_tracks:
+        steps = max(2, int(round(duration * fps)))
+        for index, (char_id, track) in enumerate(sorted(tracks.items())):
+            positions = [track.sample(duration * i / (steps - 1))[0]
+                         for i in range(steps)]
+            tint = 0.35 + 0.25 * (index % 3)
+            api.draw_motion_trail(
+                positions, (0.15, 0.35, 0.95), (0.95, 0.20, tint),
+                prefix=f"track_{char_id}",
+            )
 
     set_extent = []
     if set_spec.get("asset_id"):

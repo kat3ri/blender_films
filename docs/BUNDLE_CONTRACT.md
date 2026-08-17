@@ -40,6 +40,8 @@ The manifest is written LAST — if it exists, the bundle is complete.
 | `prompt_<gen>` | `prompt.<gen>.txt` | rendered prompt text, standalone use |
 | `prompt_fragments_<gen>` | `prompt_fragments.<gen>.json` | **the orchestrator input** |
 | `stills` | `stills/` | frame at each camera-move boundary + first/last |
+| `blocking_diagram` | `stills/blocking_diagram.png` | top-down staging: camera path (green→red) + character trails (blue→magenta) |
+| `quality_report` | `quality_report.json` | pre-flight visibility analysis; see below |
 | `readme` | `README.txt` | human index |
 
 ## prompt_fragments.<generator>.json
@@ -81,6 +83,23 @@ orchestrator never re-derives H3's grid math:
 
 Gate on `kept_duration_s < duration_s` if the shot's landing beat matters —
 the trim cuts from the END.
+
+## quality_report.json
+
+Computed from the exact pose data before anything is generated — catches the
+silent failure where a character walks out of frame or gets too small for
+identity references to survive.
+
+| field | meaning |
+|---|---|
+| `people[].id` | character id |
+| `people[].in_frame_fraction` | 0-1; fraction of frames where most of the body is in frame |
+| `people[].min_screen_height` / `max_screen_height` | body height as a fraction of frame height |
+| `people[].first_lost_at_s` | when they first left frame, or null |
+| `warnings` | human-readable; includes the target_constraints warnings, prefixed `[generator]` |
+
+Thresholds warn at <90% in-frame and <15% screen height. It warns, it never
+gates — a deliberate out-of-frame exit is a legitimate choice.
 
 ## Worked example
 

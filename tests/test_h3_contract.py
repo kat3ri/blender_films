@@ -186,3 +186,50 @@ class TestRadialRepeat(unittest.TestCase):
             "repeat": {"mode": "radial", "count": 4, "radius": 2.0, "face_outward": True},
         }])
         self.assertEqual([p["rotation_deg"][2] for p in parts], [15.0, 105.0, 195.0, 285.0])
+
+
+def _pose(frames_spec, res=(960, 544), pid="hero"):
+    """frames_spec: list of (n_visible_of_4, y_span_px)."""
+    frames = []
+    for i, (n_vis, span) in enumerate(frames_spec):
+        joints = {}
+        for j in range(4):
+            joints[f"j{j}"] = {
+                "world": [0, 0, 0],
+                "image": [100.0, 100.0 + (span if j == 3 else 0)],
+                "visible": j < n_vis,
+                "depth_m": 4.0,
+            }
+        frames.append({"frame": i + 1, "t": i * 0.25, "joints": joints})
+    return {"format": "previs.pose_landmarks", "frame_count": len(frames),
+            "resolution": list(res), "people": [{"id": pid, "frames": frames}]}
+
+
+class TestQualityReport(unittest.TestCase):
+    def test_fully_visible_shot_is_clean(self):
+        rep = B.build_quality_report(_pose([(4, 300)] * 10))
+        self.assertEqual(rep["warnings"], [])
+        self.assertEqual(rep["people"][0]["in_frame_fraction"], 1.0)
+
+    def test_character_leaving_frame_warns_with_timestamp(self):
+        # visible for 6 frames, gone for 4
+        rep = B.build_quality_report(_pose([(4, 300)] * 6 + [(0, 300)] * 4))
+        self.assertEqual(rep["people"][0]["in_frame_fraction"], 0.6)
+        self.assertEqual(rep["people"][0]["first_lost_at_s"], 1.5)
+        self.assertIn("out of frame for 40%", rep["warnings"][0])
+
+    def test_partial_body_still_counts_as_in_frame(self):
+        # half the joints visible == still in frame; a fingertip alone is not
+        rep = B.build_quality_report(_pose([(2, 300)] * 10))
+        self.assertEqual(rep["people"][0]["in_frame_fraction"], 1.0)
+        rep = B.build_quality_report(_pose([(1, 300)] * 10))
+        self.assertEqual(rep["people"][0]["in_frame_fraction"], 0.0)
+
+    def test_tiny_subject_warns(self):
+        rep = B.build_quality_report(_pose([(4, 40)] * 10))  # 40/544 = 7%
+        self.assertTrue(any("shrinks to" in w for w in rep["warnings"]))
+
+    def test_target_constraint_warnings_are_folded_in(self):
+        constraints = {"minimax": {"warnings": ["duration 5s -> trims to 4.458s"]}}
+        rep = B.build_quality_report(_pose([(4, 300)] * 10), constraints)
+        self.assertIn("[minimax] duration 5s -> trims to 4.458s", rep["warnings"])

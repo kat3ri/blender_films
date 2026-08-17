@@ -19,6 +19,7 @@ read one (a ComfyUI depth graph, a downstream script) reads ours too:
       prompt.<generator>.txt      per-target-generator prompt      (here)
       prompt_fragments.<gen>.json prompt as addressable pieces     (here)
       stills/                     frame at each mark + diagram      (Blender)
+      quality_report.json         pre-flight visibility warnings   (here)
       bundle_manifest.json        what actually got written        (here)
       README.txt                                                    (here)
 
@@ -824,7 +825,9 @@ def write_readme(out_dir, shot, entries):
         "pose_landmarks": "per-frame 3D and 2D joint positions, exact",
         "metadata": "machine-readable marks, lenses, timings",
         "prompt_generic": "cinematic prompt generated from the blocking",
-        "blocking_diagram": "top-down staging diagram",
+        "prompt_fragments_minimax": "prompt as addressable pieces, for the orchestrator",
+        "quality_report": "pre-flight: who leaves frame, and when",
+        "blocking_diagram": "top-down staging diagram (camera + character paths)",
     }
     for name, rel in sorted(entries.items()):
         desc = descriptions.get(name, "")
@@ -835,3 +838,84 @@ def write_readme(out_dir, shot, entries):
     lines.append("the grey proxy geometry.")
     (out_dir / "README.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     return "README.txt"
+
+
+# ---------------------------------------------------------------------------
+# pre-flight quality report — from the exact pose data, before a paid run
+# ---------------------------------------------------------------------------
+
+def build_quality_report(pose, target_constraints=None, warn_visibility=0.9,
+                         warn_screen_height=0.15):
+    """Catch a guide video that will waste a generation, before it is used.
+
+    Motion Previs Studio ships an equivalent report *estimated* from footage;
+    here every input is ground truth, so "the hero is out of frame for 18% of
+    this shot" is a fact rather than a detection confidence.
+
+    The failure this exists to catch is silent: a character walks out of frame,
+    or ends up so small that the generator has nothing to anchor identity to,
+    and nothing says so until the render comes back wrong. Thresholds are
+    deliberately loose -- this warns, it does not gate.
+    """
+    res = pose.get("resolution") or [0, 0]
+    res_y = float(res[1]) if len(res) > 1 else 0.0
+    report = {
+        "format": "previs.quality_report",
+        "version": "1.0",
+        "frame_count": pose.get("frame_count"),
+        "people": [],
+        "warnings": [],
+    }
+
+    for person in pose.get("people", []):
+        frames = person.get("frames") or []
+        if not frames:
+            continue
+        visible_frames = 0
+        heights = []
+        first_lost = None
+        for entry in frames:
+            joints = entry.get("joints") or {}
+            if not joints:
+                continue
+            vis = [j for j in joints.values() if j.get("visible")]
+            # "in frame" = most of the body is, not merely one fingertip
+            in_frame = len(vis) >= max(1, len(joints) // 2)
+            if in_frame:
+                visible_frames += 1
+            elif first_lost is None:
+                first_lost = entry.get("t")
+            ys = [j["image"][1] for j in joints.values() if "image" in j]
+            if ys and res_y:
+                heights.append((max(ys) - min(ys)) / res_y)
+
+        total = len(frames)
+        fraction = visible_frames / total if total else 0.0
+        entry = {
+            "id": person.get("id"),
+            "in_frame_fraction": round(fraction, 4),
+            "min_screen_height": round(min(heights), 4) if heights else None,
+            "max_screen_height": round(max(heights), 4) if heights else None,
+            "first_lost_at_s": first_lost,
+        }
+        report["people"].append(entry)
+
+        if fraction < warn_visibility:
+            lost = f" (first at {first_lost:g}s)" if first_lost is not None else ""
+            report["warnings"].append(
+                f"{person.get('id')} is out of frame for "
+                f"{(1 - fraction) * 100:.0f}% of the shot{lost} -- the generator "
+                f"has nothing to follow there."
+            )
+        if heights and min(heights) < warn_screen_height:
+            report["warnings"].append(
+                f"{person.get('id')} shrinks to {min(heights) * 100:.0f}% of frame "
+                f"height; identity references may not survive at that size."
+            )
+
+    if target_constraints:
+        for generator, constraints in target_constraints.items():
+            for warning in constraints.get("warnings", []):
+                report["warnings"].append(f"[{generator}] {warning}")
+
+    return report
